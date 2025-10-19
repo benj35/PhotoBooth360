@@ -1,262 +1,270 @@
-# 360° Photo Booth System
+# 360° Photo Booth
 
-A complete mobile application system for controlling a professional 360° photo booth with automated recording sessions.
+A complete React Native mobile application for controlling professional 360° photo booth systems.
 
-## 🎥 What It Does
+## Features
 
-This React Native mobile app provides **one-button control** of an entire 360° photo booth setup:
-- **GoPro Hero 13 Black** camera recording (via Bluetooth)
-- **360° rotating booth** controlled by ESP32 (via WiFi)
-- **Background music** playback synchronized with recording
-- **Automated session management** - start everything at once, stop automatically
+- **Automated Sessions**: One-button start for coordinated recording with GoPro, booth rotation, and music
+- **GoPro Integration**: Full BLE control of GoPro Hero 13 Black camera
+- **ESP32 Booth Control**: Network-based control of booth rotation (mock implementation for now)
+- **Music Integration**: Background music selection and playback during sessions
+- **Manual Controls**: Individual device control for testing and debugging
+- **Real-time Status**: Live monitoring of all connected devices
 
-Perfect for events, parties, weddings, and commercial photo booth operations.
+## Architecture
 
-## ✨ Key Features
+### Service Layer
+- **GoProService**: BLE communication with GoPro Hero 13
+- **BoothService**: REST API communication with ESP32 (mock for Phase 1)
+- **AudioService**: Music playback management
+- **SessionOrchestrator**: Coordinates all devices for automated sessions
 
-### Automated Sessions
-- **One-Tap Recording**: Start GoPro, booth rotation, and music simultaneously
-- **Auto-Stop**: Sessions end automatically after configured duration
-- **Real-Time Monitoring**: Live progress tracking with timer and visual feedback
+### State Management (Zustand)
+- **sessionStore**: Session configuration and state
+- **deviceStore**: Device connection states and status
+- **musicStore**: Music library and selection
 
-### Device Management
-- **GoPro Integration**: Full BLE control of GoPro Hero 13 Black
-- **Booth Control**: Network-based control of booth rotation speed
-- **Music Playback**: Background music selection and playback
-- **Status Monitoring**: Real-time battery, storage, and connection status
+### Screens
+- **ConnectionScreen**: Device setup and pairing
+- **HomeScreen**: Main control interface with one-button session start
+- **MusicSelectionScreen**: Browse and select background music
+- **SessionConfigScreen**: Configure session parameters (duration, speed, video mode, resolution)
+- **ManualControlScreen**: Individual device controls for testing
 
-### Flexible Configuration
-- Session duration (10-60 seconds)
-- Rotation speed (25-100%)
-- Video mode (standard, slow-motion, time-lapse)
-- Resolution (1080p, 4K, 5.3K)
-- Background music selection
+## Prerequisites
 
-### Safety Features
-- **Emergency Stop**: Immediately halt all devices
-- **Error Recovery**: Graceful error handling with automatic cleanup
-- **Device Validation**: Ensures all devices connected before session start
+- **Node.js 18+** (required)
+- **React Native development environment setup**
+  - For iOS: macOS with Xcode 15+, CocoaPods
+  - For Android: Android Studio with SDK 34+
+- **Physical devices for testing** (BLE requires physical hardware, not supported in simulators)
 
-## 📱 Screenshots & UI
+## Installation
 
-### Main Screens
-1. **Connection Screen**: Device setup and pairing
-2. **Home Screen**: One-button session control with live status
-3. **Music Selection**: Browse and select background tracks
-4. **Session Config**: Adjust all session parameters
-5. **Manual Control**: Test individual devices
+1. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-## 🏗️ Architecture
+2. **iOS Setup** (macOS only)
+   ```bash
+   cd ios
+   pod install
+   cd ..
+   ```
 
-```
-Mobile App (React Native + TypeScript)
-    ├── Services Layer
-    │   ├── SessionOrchestrator (coordinates all devices)
-    │   ├── GoProService (BLE communication)
-    │   ├── BoothService (REST API)
-    │   └── AudioService (music playback)
-    ├── State Management (Zustand)
-    │   ├── sessionStore
-    │   ├── deviceStore
-    │   └── musicStore
-    └── UI Layer (React Native screens)
-        └── 5 screens with navigation
-```
+3. **Android Setup**
+   - Ensure Android SDK is installed
+   - Update `local.properties` with SDK path if needed
 
-## 🚀 Quick Start
+## Running the App
 
-### Prerequisites
-- Node.js 18+
-- React Native development environment
-- iOS: Xcode + CocoaPods (macOS only)
-- Android: Android Studio + SDK
-
-### Installation
-
+### iOS
 ```bash
-# Navigate to project
-cd PhotoBooth360/mobile-app
-
-# Install dependencies
-npm install
-
-# iOS: Install pods
-cd ios && pod install && cd ..
-
-# Run on iOS
 npm run ios
+```
 
-# Run on Android
+Or open `ios/PhotoBooth360.xcworkspace` in Xcode and run
+
+### Android
+```bash
 npm run android
 ```
 
-### First Launch
+## Configuration
 
-1. **Connect GoPro**: Enable Bluetooth, put GoPro in pairing mode, connect via app
-2. **Connect Booth**: Enter ESP32 IP address (currently uses mock mode)
-3. **Start Recording**: Navigate to home screen and tap "START SESSION"
+### Bluetooth Permissions
 
-## 📚 Documentation
+**iOS** - Add to `Info.plist`:
+```xml
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>We need Bluetooth to connect to your GoPro camera</string>
+<key>NSBluetoothPeripheralUsageDescription</key>
+<string>We need Bluetooth to connect to your GoPro camera</string>
+```
 
-- **[Quick Start Guide](QUICK_START.md)**: Get up and running fast
-- **[Architecture Documentation](ARCHITECTURE.md)**: Deep dive into system design
-- **[Mobile App README](mobile-app/README.md)**: Detailed setup and configuration
+**Android** - Add to `AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.BLUETOOTH"/>
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+```
 
-## 🛠️ Technology Stack
+### Network Permissions (for Booth connection)
 
-### Mobile App
-- **React Native 0.76** - Cross-platform mobile framework
-- **TypeScript** - Type-safe development
-- **Zustand** - Lightweight state management
-- **React Navigation** - Navigation and routing
+**Android** - Add to `AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+```
 
-### Device Communication
-- **react-native-ble-plx** - Bluetooth Low Energy (GoPro)
-- **axios** - HTTP client (ESP32 booth)
-- **react-native-sound** - Audio playback
+## Usage
 
-### Future (Phase 3)
-- **FFmpeg** - Video processing
-- **Cloud Storage** - Video hosting
-- **.NET Backend** - Processing pipeline
+### First Time Setup
 
-## 📋 Project Status
+1. **Launch the app** - You'll start on the Connection screen
+2. **Connect GoPro**:
+   - Enable Bluetooth on your device
+   - Put GoPro in pairing mode (Settings > Connections > Connect Device > GoPro App)
+   - Tap "Connect via Bluetooth" in the app
+   - Wait for pairing to complete
+3. **Connect Booth**:
+   - Enter the booth's IP address (default: http://192.168.1.100)
+   - Tap "Connect via Network"
+   - For Phase 1, this will connect in mock mode
+4. **Continue to App** once both devices are connected
 
-### ✅ Phase 1 - Complete (Current)
-- [x] Full React Native project structure
-- [x] All service implementations
-- [x] Complete UI with 5 screens
-- [x] State management with Zustand
-- [x] GoPro BLE integration (ready for testing)
-- [x] Mock booth service
-- [x] Audio service
-- [x] Session orchestration logic
+### Running a Session
 
-### 📋 Phase 2 - Hardware Integration (Next)
-- [ ] Test GoPro BLE with physical device
-- [ ] Implement ESP32 REST API
-- [ ] Update booth service with real endpoints
-- [ ] End-to-end session testing
-- [ ] Video file transfer from GoPro
+1. **Main Screen**: Configure your session
+   - Tap "🎵 Music" to select background music (optional)
+   - Tap "Edit Settings" to adjust duration, rotation speed, and video quality
+2. **Start Session**: Tap the big "START SESSION" button
+   - Booth rotation starts
+   - GoPro begins recording
+   - Music plays (if selected)
+   - Session auto-stops after configured duration
+3. **Monitor Progress**: Watch the timer and progress bar
+4. **Emergency Stop**: Tap "🛑 Emergency" if needed
 
-### 📋 Phase 3 - Video Processing (Future)
-- [ ] FFmpeg integration
-- [ ] Video + audio merging
-- [ ] Intro/outro clips
-- [ ] Cloud processing option
-- [ ] Video gallery and sharing
+### Manual Controls
 
-## 🎯 Use Cases
+For testing individual devices:
+1. Navigate to Manual Control screen
+2. Toggle individual devices on/off
+3. Adjust booth rotation speed
+4. Test music playback
 
-### Event Photography
-- Weddings and parties
-- Corporate events
-- Festivals and concerts
-- Product launches
+## Development Phases
 
-### Commercial Operations
-- Photo booth rental businesses
-- Mall and venue installations
-- Marketing activations
-- Social media content creation
+### 🚀 Phase 1: MVP - Booth Operation (In Progress)
+**Goal:** Run first paid event with manual editing workflow (5 Sundays)
 
-## 🔧 Hardware Requirements
+- Week 1: Hardware integration (ESP32 + GoPro physical testing)
+- Week 2: Automated session flow
+- Week 3: File management & downloads
+- Week 4: Manual editing workflow documentation
+- Week 5: End-to-end testing & event prep
 
-### Required
-- **Mobile Device**: iOS or Android phone/tablet
-- **GoPro Hero 13 Black**: For video recording
-- **ESP32 Microcontroller**: For booth rotation control
-- **Rotating Booth**: 360° platform with motor
+**See:** [docs/PHASE1_PLAN.md](docs/PHASE1_PLAN.md) for detailed plan
 
-### Optional
-- **Speakers**: For music playback
-- **Lighting**: For better video quality
-- **Backdrop**: For professional setup
+### 📋 Phase 2: Automation (Future)
+**Goal:** Automate editing and delivery pipeline
 
-## 🤝 Contributing
+- FFmpeg script automation
+- Telegram bot auto-delivery
+- Event template management
+- Batch processing
 
-This is an active development project. Key areas for contribution:
-- GoPro BLE testing and refinement
-- ESP32 firmware development
-- Video processing pipeline
-- UI/UX improvements
-- Testing and bug reports
+**See:** [docs/FUTURE_AUTOMATION.md](docs/FUTURE_AUTOMATION.md)
 
-## 📝 ESP32 API Specification
+### 📋 Phase 3: Scaling (Future)
+**Goal:** Cloud processing and multi-event management
 
-The booth controller should implement these REST endpoints:
+- Cloud video processing (Shotstack API)
+- WhatsApp Business integration
+- Multi-event dashboard
+- Premium editing features
 
+**See:** [docs/FUTURE_AUTOMATION.md](docs/FUTURE_AUTOMATION.md)
+
+## GoPro BLE Commands
+
+The app uses GoPro's OpenGoPro BLE API:
+- Service UUID: `0000fea6-0000-1000-8000-00805f9b34fb`
+- Command characteristic for recording start/stop
+- Status characteristic for battery, storage, etc.
+
+Reference: [GoPro OpenGoPro BLE Documentation](https://gopro.github.io/OpenGoPro/ble/)
+
+## ESP32 REST API (To Be Implemented)
+
+Expected endpoints for booth control:
 ```
 POST /rotate/start
-Content-Type: application/json
-{ "speed": 50 }  // 0-100
+{
+  "speed": 50  // 0-100
+}
 
 POST /rotate/stop
 
 GET /status
-Response: {
-  "rotating": boolean,
-  "speed": number,
-  "temperature": number,
-  "errorCode": number | null
+{
+  "rotating": false,
+  "speed": 0,
+  "temperature": 45,
+  "errorCode": null
 }
 ```
 
-## 🔐 Permissions Required
-
-### iOS
-- Bluetooth Always Usage
-- Microphone (for audio playback)
-
-### Android
-- Bluetooth
-- Bluetooth Admin
-- Bluetooth Scan/Connect
-- Fine Location (required for BLE)
-- Internet
-- Network State
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### GoPro Won't Connect
 - Ensure GoPro is in pairing mode
-- Check Bluetooth permissions
+- Check Bluetooth permissions are granted
 - Try restarting the GoPro
-- Update GoPro firmware
+- Ensure GoPro firmware is up to date
 
-### App Crashes
-```bash
-# Clear Metro cache
-npm start -- --reset-cache
-
-# Rebuild
-npm run android
-```
+### App Crashes on Launch
+- Clear Metro bundler cache: `npm start -- --reset-cache`
+- Rebuild the app: `npm run android` or `npm run ios`
 
 ### BLE Not Working
-- BLE requires physical device (not simulator)
-- Ensure location permissions granted (Android)
+- BLE requires physical device (won't work in simulator)
+- Ensure location permissions are granted (Android requirement)
 
-## 📄 License
+## Project Structure
 
-MIT License - See LICENSE file for details
+```
+PhotoBooth360/
+├── src/
+│   ├── services/          # Device control services
+│   │   ├── GoProService.ts
+│   │   ├── BoothService.ts
+│   │   ├── AudioService.ts
+│   │   └── SessionOrchestrator.ts
+│   ├── stores/            # Zustand state management
+│   │   ├── sessionStore.ts
+│   │   ├── deviceStore.ts
+│   │   └── musicStore.ts
+│   ├── screens/           # UI screens
+│   │   ├── ConnectionScreen.tsx
+│   │   ├── HomeScreen.tsx
+│   │   ├── MusicSelectionScreen.tsx
+│   │   ├── SessionConfigScreen.tsx
+│   │   └── ManualControlScreen.tsx
+│   └── types/             # TypeScript definitions
+│       └── index.ts
+├── App.tsx                # Root component
+├── package.json
+└── [documentation files]
+```
 
-## 📞 Support
+## Tech Stack
 
-For questions, issues, or feature requests:
-- Open an issue on GitHub
-- Check documentation in `/docs`
-- Review example sessions
+- **React Native 0.82** (October 2025): Latest release with New Architecture only
+- **React 19.2**: Latest React version
+- **TypeScript 5.7**: Type-safe development
+- **Zustand 5**: Lightweight state management
+- **React Navigation 7**: Navigation and routing
+- **react-native-ble-plx 3.5**: Bluetooth Low Energy communication
+- **react-native-sound**: Audio playback
+- **axios 1.12**: HTTP client for booth communication
 
-## 🙏 Acknowledgments
+## Contributing
 
-- **GoPro OpenGoPro**: For comprehensive BLE API documentation
-- **React Native Community**: For excellent mobile development tools
-- **Zustand**: For simple and effective state management
+This project is in active development. Key areas for contribution:
+- Testing GoPro BLE integration with real hardware
+- ESP32 firmware and REST API implementation
+- Video processing pipeline
+- UI/UX improvements
 
----
+## License
 
-**Built with ❤️ for the photo booth industry**
+MIT
 
-**Version:** 1.0.0 (Phase 1 Complete)
-**Last Updated:** 2025-10-12
+## Contact
+
+For questions or support, please open an issue in the repository.
