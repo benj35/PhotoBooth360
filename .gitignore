@@ -37,11 +37,6 @@ local.properties
 .cxx/
 *.keystore
 !debug.keystore
-android/app/build/
-android/.gradle/
-android/gradle/
-android/gradlew
-android/gradlew.bat
 
 # node.js
 #
