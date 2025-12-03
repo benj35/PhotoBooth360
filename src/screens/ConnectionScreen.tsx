@@ -17,7 +17,8 @@ type ConnectionScreenProps = {
 };
 
 export default function ConnectionScreen({ navigation }: ConnectionScreenProps) {
-  const [boothUrl, setBoothUrl] = useState('http://192.168.1.100');
+  const [boothUrl, setBoothUrl] = useState('http://192.168.4.1');
+  const [skipGoPro, setSkipGoPro] = useState(false); // Temporary: Skip GoPro for testing
   const { devices, connecting, connectGoPro, connectBooth } = useDeviceStore();
 
   const handleConnectGoPro = async () => {
@@ -39,10 +40,30 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
   };
 
   const handleContinue = () => {
-    if (!devices.gopro.connected || !devices.booth.connected) {
-      Alert.alert('Warning', 'Please connect both devices before continuing');
+    // Allow continuing if booth is connected (skip GoPro check for testing)
+    if (!devices.booth.connected) {
+      Alert.alert('Warning', 'Please connect the booth before continuing');
       return;
     }
+
+    if (!devices.gopro.connected && !skipGoPro) {
+      Alert.alert(
+        'GoPro Not Connected',
+        'GoPro is not connected. Continue anyway for testing?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue Anyway',
+            onPress: () => {
+              setSkipGoPro(true);
+              navigation.navigate('Home');
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     navigation.navigate('Home');
   };
 
@@ -134,13 +155,14 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
       <TouchableOpacity
         style={[
           styles.continueButton,
-          (!devices.gopro.connected || !devices.booth.connected) &&
-            styles.continueButtonDisabled,
+          !devices.booth.connected && styles.continueButtonDisabled,
         ]}
         onPress={handleContinue}
-        disabled={!devices.gopro.connected || !devices.booth.connected}
+        disabled={!devices.booth.connected}
       >
-        <Text style={styles.buttonText}>Continue to App</Text>
+        <Text style={styles.buttonText}>
+          {devices.gopro.connected ? 'Continue to App' : 'Continue (Testing Mode)'}
+        </Text>
       </TouchableOpacity>
 
       <Text style={styles.helpText}>
