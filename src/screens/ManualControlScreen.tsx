@@ -7,7 +7,9 @@ import {
   Switch,
   Alert,
   ScrollView,
+  TextInput,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useDeviceStore } from '@stores/deviceStore';
@@ -165,8 +167,10 @@ export default function ManualControlScreen({ navigation }: ManualControlScreenP
               </View>
 
               <Text style={styles.speedLabel}>Rotation Speed: {rotationSpeed}%</Text>
+
+              {/* Speed Preset Buttons - 20% apart */}
               <View style={styles.speedButtons}>
-                {[25, 50, 75, 100].map((speed) => (
+                {[20, 40, 60, 80, 100].map((speed) => (
                   <TouchableOpacity
                     key={speed}
                     style={[
@@ -185,6 +189,41 @@ export default function ManualControlScreen({ navigation }: ManualControlScreenP
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+
+              {/* Slider Control */}
+              <View style={styles.sliderContainer}>
+                <Text style={styles.sliderLabel}>Fine Control:</Text>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={1}
+                  maximumValue={100}
+                  step={1}
+                  value={rotationSpeed}
+                  onValueChange={(value) => handleSpeedChange(Math.round(value))}
+                  minimumTrackTintColor="#4caf50"
+                  maximumTrackTintColor="#333"
+                  thumbTintColor="#4caf50"
+                />
+              </View>
+
+              {/* Manual Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Exact Value:</Text>
+                <TextInput
+                  style={styles.speedInput}
+                  value={rotationSpeed.toString()}
+                  onChangeText={(text) => {
+                    const value = parseInt(text) || 1;
+                    const clampedValue = Math.max(1, Math.min(100, value));
+                    handleSpeedChange(clampedValue);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  placeholder="50"
+                  placeholderTextColor="#666"
+                />
+                <Text style={styles.inputUnit}>%</Text>
               </View>
             </>
           ) : (
@@ -350,6 +389,51 @@ const styles = StyleSheet.create({
   },
   speedButtonTextSelected: {
     color: '#fff',
+  },
+  sliderContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  sliderLabel: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 8,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#999',
+    marginRight: 12,
+  },
+  speedInput: {
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    borderWidth: 2,
+    borderColor: '#4caf50',
+  },
+  inputUnit: {
+    fontSize: 16,
+    color: '#999',
+    marginLeft: 8,
+    fontWeight: '600',
   },
   notConnectedText: {
     fontSize: 14,

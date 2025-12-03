@@ -5,7 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  TextInput,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useSessionStore } from '@stores/sessionStore';
@@ -21,7 +23,7 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
   const [localSpeed, setLocalSpeed] = useState(config.rotationSpeed);
 
   const durations = [10, 15, 20, 25, 30, 40, 60];
-  const speeds = [25, 50, 75, 100];
+  const speeds = [20, 40, 60, 80, 100]; // Changed to 20% apart
   const videoModes: VideoMode[] = ['standard', 'slow-motion', 'time-lapse'];
   const resolutions: VideoResolution[] = ['1080p', '4k', '5.3k'];
 
@@ -77,9 +79,10 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
 
         {/* Rotation Speed Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Rotation Speed</Text>
+          <Text style={styles.sectionTitle}>Rotation Speed: {localSpeed}%</Text>
           <Text style={styles.sectionSubtitle}>Control how fast the booth rotates</Text>
 
+          {/* Speed Preset Buttons - 20% apart */}
           <View style={styles.optionsGrid}>
             {speeds.map((speed) => (
               <TouchableOpacity
@@ -100,6 +103,41 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+
+          {/* Slider Control */}
+          <View style={styles.sliderContainer}>
+            <Text style={styles.sliderLabel}>Fine Control:</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={1}
+              maximumValue={100}
+              step={1}
+              value={localSpeed}
+              onValueChange={(value) => setLocalSpeed(Math.round(value))}
+              minimumTrackTintColor="#4caf50"
+              maximumTrackTintColor="#333"
+              thumbTintColor="#4caf50"
+            />
+          </View>
+
+          {/* Manual Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Exact Value:</Text>
+            <TextInput
+              style={styles.speedInput}
+              value={localSpeed.toString()}
+              onChangeText={(text) => {
+                const value = parseInt(text) || 1;
+                const clampedValue = Math.max(1, Math.min(100, value));
+                setLocalSpeed(clampedValue);
+              }}
+              keyboardType="number-pad"
+              maxLength={3}
+              placeholder="50"
+              placeholderTextColor="#666"
+            />
+            <Text style={styles.inputUnit}>%</Text>
           </View>
         </View>
 
@@ -256,6 +294,51 @@ const styles = StyleSheet.create({
     color: '#4caf50',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  sliderContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  sliderLabel: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 8,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#999',
+    marginRight: 12,
+  },
+  speedInput: {
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    borderWidth: 2,
+    borderColor: '#4caf50',
+  },
+  inputUnit: {
+    fontSize: 16,
+    color: '#999',
+    marginLeft: 8,
+    fontWeight: '600',
   },
   actions: {
     marginTop: 20,
