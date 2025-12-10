@@ -1,4 +1,4 @@
-import { ISessionOrchestrator, SessionConfig, SessionState } from '@types/index';
+import { ISessionOrchestrator, SessionConfig, SessionState } from '../types';
 import goProService from './GoProService';
 import boothService from './BoothService';
 import audioService from './AudioService';
@@ -55,6 +55,10 @@ export class SessionOrchestrator implements ISessionOrchestrator {
       console.log('[SessionOrchestrator] Configuring GoPro settings');
       await goProService.setVideoMode(config.videoMode);
       await goProService.setResolution(config.resolution);
+
+      // Step 2.5: Apply LED preset
+      console.log('[SessionOrchestrator] Applying LED preset:', config.ledPreset);
+      await boothService.applyLEDPreset(config.ledPreset);
 
       // Small delay to ensure settings are applied
       await this.delay(500);

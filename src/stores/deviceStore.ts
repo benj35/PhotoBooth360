@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DeviceConnectionState } from '@types/index';
+import { DeviceConnectionState } from '../types';
 import goProService from '@services/GoProService';
 import boothService from '@services/BoothService';
 
@@ -48,11 +48,15 @@ export const useDeviceStore = create<DeviceStore>((set, get) => ({
     }));
 
     try {
+      console.log('[DeviceStore] Connecting to GoPro...');
       await goProService.connect();
+      console.log('[DeviceStore] GoPro connected, getting status...');
 
       // Get initial status
       const status = await goProService.getStatus();
+      console.log('[DeviceStore] Got status:', status);
 
+      console.log('[DeviceStore] Updating state...');
       set((state) => ({
         devices: {
           ...state.devices,
@@ -65,6 +69,7 @@ export const useDeviceStore = create<DeviceStore>((set, get) => ({
         },
         connecting: { ...state.connecting, gopro: false },
       }));
+      console.log('[DeviceStore] ✅ GoPro connection complete');
     } catch (error) {
       console.error('[DeviceStore] Failed to connect GoPro:', error);
       set((state) => ({

@@ -147,21 +147,25 @@ export class BoothService implements IBoothService {
   }
 
   /**
-   * Control LED lights (optional feature)
-   * @param power - LED on/off
-   * @param mode - solid or blink
+   * Control LED lights
+   * @param power - 'on' or 'off'
+   * @param brightness - Brightness 0-255
+   * @param mode - 'solid', 'blink', or 'fade'
    * @param r - Red value (0-255)
    * @param g - Green value (0-255)
    * @param b - Blue value (0-255)
-   * @param interval - Blink interval in ms (optional)
+   * @param interval - Blink interval in ms (optional, for blink mode)
+   * @param speed - Fade speed 1-40 (optional, for fade mode)
    */
   async setLED(
-    power: boolean,
-    mode: 'solid' | 'blink',
-    r: number,
-    g: number,
-    b: number,
-    interval?: number
+    power: 'on' | 'off',
+    brightness: number = 255,
+    mode: 'solid' | 'blink' | 'fade' = 'solid',
+    r: number = 255,
+    g: number = 255,
+    b: number = 255,
+    interval?: number,
+    speed?: number
   ): Promise<void> {
     if (!this.isConnected || !this.client) {
       throw new Error('Booth is not connected');
@@ -170,14 +174,21 @@ export class BoothService implements IBoothService {
     try {
       const params: any = {
         power,
+        brightness: Math.max(0, Math.min(255, brightness)),
         mode,
         r: Math.max(0, Math.min(255, r)),
         g: Math.max(0, Math.min(255, g)),
         b: Math.max(0, Math.min(255, b)),
       };
 
+      // Add interval for blink mode
       if (mode === 'blink' && interval) {
         params.interval = interval;
+      }
+
+      // Add speed for fade mode
+      if (mode === 'fade' && speed) {
+        params.speed = Math.max(1, Math.min(40, speed));
       }
 
       await this.client.get('/api/led', { params });
@@ -185,6 +196,83 @@ export class BoothService implements IBoothService {
       console.log('[Booth] LED updated:', params);
     } catch (error) {
       console.error('[Booth] Error setting LED:', error);
+      // Don't throw - LED is optional feature
+    }
+  }
+
+  /**
+   * Quick LED presets
+   */
+  async ledOff(): Promise<void> {
+    await this.setLED('off', 0, 'solid', 0, 0, 0);
+  }
+
+  async ledWhite(brightness: number = 255): Promise<void> {
+    await this.setLED('on', brightness, 'solid', 255, 255, 255);
+  }
+
+  async ledColor(r: number, g: number, b: number, brightness: number = 255): Promise<void> {
+    await this.setLED('on', brightness, 'solid', r, g, b);
+  }
+
+  async ledBlink(r: number, g: number, b: number, interval: number = 500): Promise<void> {
+    await this.setLED('on', 255, 'blink', r, g, b, interval);
+  }
+
+  async ledFade(r: number, g: number, b: number, speed: number = 20): Promise<void> {
+    await this.setLED('on', 255, 'fade', r, g, b, undefined, speed);
+  }
+
+  /**
+   * Apply LED preset from session configuration
+   * @param preset - LED preset identifier
+   */
+  async applyLEDPreset(preset: string): Promise<void> {
+    if (!this.isConnected || !this.client) {
+      throw new Error('Booth is not connected');
+    }
+
+    console.log('[Booth] Applying LED preset:', preset);
+
+    try {
+      switch (preset) {
+        case 'off':
+          await this.ledOff();
+          break;
+
+        case 'wedding-white':
+          await this.ledWhite(255); // Bright white at full brightness
+          break;
+
+        case 'party-colors':
+          // Rainbow cycling effect using fade mode
+          await this.setLED('on', 255, 'fade', 255, 0, 255, undefined, 15); // Fast fade
+          break;
+
+        case 'romantic-pink':
+          await this.ledColor(255, 105, 180, 200); // Hot pink at 200 brightness
+          break;
+
+        case 'corporate-blue':
+          await this.ledColor(30, 144, 255, 220); // Dodger blue at 220 brightness
+          break;
+
+        case 'energetic-red':
+          await this.ledColor(255, 0, 0, 255); // Pure red at full brightness
+          break;
+
+        case 'cool-purple':
+          await this.ledColor(147, 112, 219, 210); // Medium purple at 210 brightness
+          break;
+
+        default:
+          console.warn('[Booth] Unknown LED preset:', preset);
+          await this.ledWhite(255); // Default to white
+      }
+
+      console.log('[Booth] ✅ LED preset applied');
+    } catch (error) {
+      console.error('[Booth] Error applying LED preset:', error);
       // Don't throw - LED is optional feature
     }
   }

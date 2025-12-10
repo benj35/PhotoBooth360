@@ -6,7 +6,10 @@ export interface SessionConfig {
   rotationSpeed: number; // 0-100
   videoMode: VideoMode;
   resolution: VideoResolution;
+  ledPreset: LEDPreset;
 }
+
+export type LEDPreset = 'off' | 'wedding-white' | 'party-colors' | 'romantic-pink' | 'corporate-blue' | 'energetic-red' | 'cool-purple';
 
 export type VideoMode = 'standard' | 'slow-motion' | 'time-lapse';
 export type VideoResolution = '1080p' | '4k' | '5.3k';

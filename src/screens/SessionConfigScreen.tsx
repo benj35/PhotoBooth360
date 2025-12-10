@@ -11,7 +11,7 @@ import Slider from '@react-native-community/slider';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useSessionStore } from '@stores/sessionStore';
-import { VideoMode, VideoResolution } from '@types/index';
+import { VideoMode, VideoResolution, LEDPreset } from '../types';
 
 type SessionConfigScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'SessionConfig'>;
@@ -26,6 +26,16 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
   const speeds = [20, 40, 60, 80, 100]; // Changed to 20% apart
   const videoModes: VideoMode[] = ['standard', 'slow-motion', 'time-lapse'];
   const resolutions: VideoResolution[] = ['1080p', '4k', '5.3k'];
+
+  const ledPresets: Array<{ value: LEDPreset; label: string; color: string; description: string }> = [
+    { value: 'off', label: 'LED Off', color: '#333333', description: 'No lighting' },
+    { value: 'wedding-white', label: 'Wedding White', color: '#ffffff', description: 'Bright white for weddings' },
+    { value: 'party-colors', label: 'Party Colors', color: '#ff00ff', description: 'Rainbow cycling effect' },
+    { value: 'romantic-pink', label: 'Romantic Pink', color: '#ff69b4', description: 'Soft pink lighting' },
+    { value: 'corporate-blue', label: 'Corporate Blue', color: '#1e90ff', description: 'Professional blue tone' },
+    { value: 'energetic-red', label: 'Energetic Red', color: '#ff0000', description: 'Bold red lighting' },
+    { value: 'cool-purple', label: 'Cool Purple', color: '#9370db', description: 'Modern purple vibe' },
+  ];
 
   const handleSave = () => {
     updateConfig({
@@ -43,6 +53,7 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
       rotationSpeed: 50,
       videoMode: 'standard',
       resolution: '4k',
+      ledPreset: 'wedding-white',
     });
   };
 
@@ -196,6 +207,43 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
                   {resolution.toUpperCase()}
                 </Text>
                 {config.resolution === resolution && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* LED Lighting Preset Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>LED Lighting</Text>
+          <Text style={styles.sectionSubtitle}>Select booth lighting for the session</Text>
+
+          <View style={styles.optionsList}>
+            {ledPresets.map((preset) => (
+              <TouchableOpacity
+                key={preset.value}
+                style={[
+                  styles.ledPresetOption,
+                  config.ledPreset === preset.value && styles.ledPresetOptionSelected,
+                ]}
+                onPress={() => updateConfig({ ledPreset: preset.value })}
+              >
+                <View style={styles.ledPresetInfo}>
+                  <View style={[styles.ledColorDot, { backgroundColor: preset.color }]} />
+                  <View style={styles.ledPresetTextContainer}>
+                    <Text
+                      style={[
+                        styles.listOptionText,
+                        config.ledPreset === preset.value && styles.listOptionTextSelected,
+                      ]}
+                    >
+                      {preset.label}
+                    </Text>
+                    <Text style={styles.ledPresetDescription}>{preset.description}</Text>
+                  </View>
+                </View>
+                {config.ledPreset === preset.value && (
                   <Text style={styles.checkmark}>✓</Text>
                 )}
               </TouchableOpacity>
@@ -365,5 +413,41 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  ledPresetOption: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 8,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    marginBottom: 10,
+  },
+  ledPresetOptionSelected: {
+    backgroundColor: '#2a4a2a',
+    borderColor: '#4caf50',
+  },
+  ledPresetInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  ledColorDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#666',
+  },
+  ledPresetTextContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  ledPresetDescription: {
+    fontSize: 12,
+    color: '#666',
   },
 });

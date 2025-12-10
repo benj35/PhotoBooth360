@@ -17,44 +17,76 @@ const COMMANDS = {
 };
 
 export class GoProService implements IGoProService {
-  private bleManager: BleManager;
+  private bleManager: BleManager | null = null;
   private device: Device | null = null;
   private commandChar: Characteristic | null = null;
   private statusChar: Characteristic | null = null;
   private isConnected = false;
 
   constructor() {
-    this.bleManager = new BleManager();
+    // Initialize BLE manager lazily to avoid startup crashes
+    console.log('[GoPro] GoProService initialized');
+  }
+
+  private ensureBleManager(): BleManager {
+    if (!this.bleManager) {
+      console.log('[GoPro] Creating BleManager instance');
+      this.bleManager = new BleManager();
+    }
+    return this.bleManager;
   }
 
   async connect(): Promise<void> {
     console.log('[GoPro] Starting connection...');
 
-    // Request Bluetooth permissions
-    const state = await this.bleManager.state();
-    if (state !== 'PoweredOn') {
-      throw new Error('Bluetooth is not powered on');
+    try {
+      const manager = this.ensureBleManager();
+
+      // Request Bluetooth permissions
+      console.log('[GoPro] Checking Bluetooth state...');
+      const state = await manager.state();
+      console.log('[GoPro] Bluetooth state:', state);
+
+      if (state !== 'PoweredOn') {
+        throw new Error(`Bluetooth is not powered on. Current state: ${state}`);
+      }
+    } catch (error) {
+      console.error('[GoPro] Error initializing BLE:', error);
+      throw error;
     }
 
     // Scan for GoPro devices
     return new Promise((resolve, reject) => {
+      const manager = this.ensureBleManager();
+
+      console.log('[GoPro] Starting BLE scan for GoPro devices...');
+      let devicesFound = 0;
+
       const timeout = setTimeout(() => {
-        this.bleManager.stopDeviceScan();
+        console.log(`[GoPro] Scan timeout - found ${devicesFound} BLE devices total, but no GoPro`);
+        manager.stopDeviceScan();
         reject(new Error('GoPro device not found within timeout'));
       }, 30000);
 
-      this.bleManager.startDeviceScan(null, null, async (error, device) => {
+      manager.startDeviceScan(null, null, async (error, device) => {
         if (error) {
+          console.error('[GoPro] BLE scan error:', error);
           clearTimeout(timeout);
-          this.bleManager.stopDeviceScan();
+          manager.stopDeviceScan();
           reject(error);
           return;
         }
 
+        if (device) {
+          devicesFound++;
+          // Log all devices for debugging
+          console.log(`[GoPro] Found BLE device #${devicesFound}: "${device.name || 'UNNAMED'}" (${device.id})`);
+        }
+
         // Look for GoPro device (name starts with "GoPro")
         if (device && device.name && device.name.startsWith('GoPro')) {
-          console.log('[GoPro] Found device:', device.name);
-          this.bleManager.stopDeviceScan();
+          console.log('[GoPro] ✅ MATCHED GoPro device:', device.name);
+          manager.stopDeviceScan();
           clearTimeout(timeout);
 
           try {
@@ -82,17 +114,17 @@ export class GoProService implements IGoProService {
               throw new Error('Command characteristic not found');
             }
 
-            // Subscribe to status updates
-            if (this.statusChar) {
-              await this.statusChar.monitor((error, characteristic) => {
-                if (error) {
-                  console.error('[GoPro] Status monitor error:', error);
-                  return;
-                }
-                // Handle status updates
-                console.log('[GoPro] Status update received');
-              });
-            }
+            // TODO: Subscribe to status updates (disabled for now to prevent crashes)
+            // The monitor() callback can cause issues if not properly handled
+            // if (this.statusChar) {
+            //   await this.statusChar.monitor((error, characteristic) => {
+            //     if (error) {
+            //       console.error('[GoPro] Status monitor error:', error);
+            //       return;
+            //     }
+            //     console.log('[GoPro] Status update received');
+            //   });
+            // }
 
             this.isConnected = true;
             console.log('[GoPro] Connection complete');
@@ -122,9 +154,15 @@ export class GoProService implements IGoProService {
     }
 
     console.log('[GoPro] Starting recording...');
-    const command = Buffer.from(COMMANDS.SET_SHUTTER_ON).toString('base64');
-    await this.commandChar.writeWithResponse(command);
-    console.log('[GoPro] Recording started');
+
+    try {
+      const command = Buffer.from(COMMANDS.SET_SHUTTER_ON).toString('base64');
+      await this.commandChar.writeWithResponse(command);
+      console.log('[GoPro] ✅ Recording started');
+    } catch (error) {
+      console.error('[GoPro] Error starting recording:', error);
+      throw error;
+    }
   }
 
   async stopRecording(): Promise<void> {
@@ -133,9 +171,15 @@ export class GoProService implements IGoProService {
     }
 
     console.log('[GoPro] Stopping recording...');
-    const command = Buffer.from(COMMANDS.SET_SHUTTER_OFF).toString('base64');
-    await this.commandChar.writeWithResponse(command);
-    console.log('[GoPro] Recording stopped');
+
+    try {
+      const command = Buffer.from(COMMANDS.SET_SHUTTER_OFF).toString('base64');
+      await this.commandChar.writeWithResponse(command);
+      console.log('[GoPro] ✅ Recording stopped');
+    } catch (error) {
+      console.error('[GoPro] Error stopping recording:', error);
+      throw error;
+    }
   }
 
   async getStatus(): Promise<GoProStatus> {
@@ -143,12 +187,18 @@ export class GoProService implements IGoProService {
       throw new Error('GoPro is not connected');
     }
 
-    // Request status
-    const command = Buffer.from(COMMANDS.GET_STATUS).toString('base64');
-    await this.commandChar.writeWithResponse(command);
+    console.log('[GoPro] Getting status...');
 
-    // Parse status response (simplified - actual implementation would parse the full response)
-    // This is a mock response for now
+    // TODO: Implement actual GoPro status query protocol
+    // For now, return mock data to avoid crash
+    // The actual implementation requires reading from status characteristic
+    // and parsing the binary response according to OpenGoPro spec
+
+    // TEMPORARY: Skip actual BLE communication for now
+    // const command = Buffer.from(COMMANDS.GET_STATUS).toString('base64');
+    // await this.commandChar.writeWithResponse(command);
+
+    // Return mock status
     return {
       battery: 85,
       recording: false,

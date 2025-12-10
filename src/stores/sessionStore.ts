@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SessionConfig, SessionState } from '@types/index';
+import { SessionConfig, SessionState } from '../types';
 import sessionOrchestrator from '@services/SessionOrchestrator';
 
 interface SessionStore {
@@ -21,6 +21,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   rotationSpeed: 50, // 50% speed
   videoMode: 'standard',
   resolution: '4k',
+  ledPreset: 'wedding-white', // Default LED preset
 };
 
 export const useSessionStore = create<SessionStore>((set, get) => {

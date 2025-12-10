@@ -7,6 +7,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -21,12 +23,71 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
   const [skipGoPro, setSkipGoPro] = useState(false); // Temporary: Skip GoPro for testing
   const { devices, connecting, connectGoPro, connectBooth } = useDeviceStore();
 
+  const requestBluetoothPermissions = async (): Promise<boolean> => {
+    if (Platform.OS === 'ios') {
+      // iOS permissions are handled automatically via Info.plist
+      return true;
+    }
+
+    try {
+      const androidVersion = Number(Platform.Version);
+
+      if (androidVersion >= 31) {
+        // Android 12+ (API 31+) - Request new Bluetooth permissions
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        ]);
+
+        return (
+          granted['android.permission.BLUETOOTH_SCAN'] === PermissionsAndroid.RESULTS.GRANTED &&
+          granted['android.permission.BLUETOOTH_CONNECT'] === PermissionsAndroid.RESULTS.GRANTED
+        );
+      } else {
+        // Android < 12 - Request location permission (required for BLE scanning)
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
+    } catch (error) {
+      console.error('Error requesting Bluetooth permissions:', error);
+      return false;
+    }
+  };
+
   const handleConnectGoPro = async () => {
     try {
+      console.log('[ConnectionScreen] Starting GoPro connection...');
+
+      // Request Bluetooth permissions first
+      const hasPermission = await requestBluetoothPermissions();
+      console.log('[ConnectionScreen] Permission granted:', hasPermission);
+
+      if (!hasPermission) {
+        Alert.alert(
+          'Permission Required',
+          'Bluetooth permissions are required to connect to GoPro. Please grant permissions in your device settings.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      console.log('[ConnectionScreen] Calling connectGoPro...');
       await connectGoPro();
-      Alert.alert('Success', 'GoPro connected successfully');
+      console.log('[ConnectionScreen] GoPro connected successfully, showing alert...');
+
+      // Use setTimeout to ensure state update is complete before showing alert
+      setTimeout(() => {
+        Alert.alert('Success', 'GoPro connected successfully');
+      }, 100);
     } catch (error: any) {
-      Alert.alert('Error', `Failed to connect GoPro: ${error.message}`);
+      console.error('[ConnectionScreen] GoPro connection error:', error);
+      const errorMessage = error?.message || 'Unknown error';
+      setTimeout(() => {
+        Alert.alert('Error', `Failed to connect GoPro: ${errorMessage}`);
+      }, 100);
     }
   };
 
@@ -88,9 +149,11 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
 
         {devices.gopro.connected ? (
           <View style={styles.deviceInfo}>
-            <Text style={styles.deviceInfoText}>Battery: {devices.gopro.battery}%</Text>
             <Text style={styles.deviceInfoText}>
-              Storage: {devices.gopro.storageRemaining} MB
+              Battery: {devices.gopro.battery !== null ? `${devices.gopro.battery}%` : 'N/A'}
+            </Text>
+            <Text style={styles.deviceInfoText}>
+              Storage: {devices.gopro.storageRemaining !== null ? `${devices.gopro.storageRemaining} MB` : 'N/A'}
             </Text>
           </View>
         ) : (
