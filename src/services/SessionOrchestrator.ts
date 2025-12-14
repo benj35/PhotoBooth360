@@ -2,6 +2,8 @@ import { ISessionOrchestrator, SessionConfig, SessionState } from '../types';
 import goProService from './GoProService';
 import boothService from './BoothService';
 import audioService from './AudioService';
+import wifiManager from './WiFiManagerService';
+import goProWiFiService from './GoProWiFiService';
 
 /**
  * Session Orchestrator - Coordinates all devices for automated recording sessions
@@ -103,6 +105,7 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
   /**
    * Stop the current recording session
+   * IMPORTANT: This now includes automatic WiFi switching for video download
    */
   async stopSession(): Promise<void> {
     console.log('[SessionOrchestrator] Stopping session');
@@ -136,7 +139,49 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
       console.log('[SessionOrchestrator] All devices stopped successfully');
 
-      // Update state to idle
+      // === NEW: AUTOMATIC WIFI SWITCHING FOR VIDEO DOWNLOAD ===
+      console.log('[SessionOrchestrator] Starting automatic video download workflow...');
+
+      // Step 1: Enable GoPro WiFi via BLE (required for Hero 13)
+      console.log('[SessionOrchestrator] Enabling GoPro WiFi Access Point via BLE...');
+      try {
+        await goProService.enableWiFi();
+        console.log('[SessionOrchestrator] ✅ GoPro WiFi enabled via BLE');
+
+        // Wait for GoPro WiFi to fully activate (network needs time to broadcast)
+        console.log('[SessionOrchestrator] Waiting 10 seconds for WiFi network to become visible...');
+        console.log('[SessionOrchestrator] PLEASE CHECK: Look at GoPro screen - is WiFi icon visible?');
+        await this.delay(10000);
+      } catch (error) {
+        console.error('[SessionOrchestrator] ❌ Failed to enable GoPro WiFi via BLE:', error);
+        // Continue anyway - maybe WiFi was already enabled
+      }
+
+      // Step 2: Switch to GoPro WiFi
+      console.log('[SessionOrchestrator] Switching to GoPro WiFi network for download...');
+      const switchSuccess = await wifiManager.switchToGoProWiFi();
+
+      if (switchSuccess) {
+        console.log('[SessionOrchestrator] ✅ Connected to GoPro WiFi');
+
+        // Step 3: Test GoPro WiFi connection
+        const goProConnected = await goProWiFiService.testConnection();
+
+        if (goProConnected) {
+          console.log('[SessionOrchestrator] ✅ GoPro HTTP API is reachable');
+          console.log('[SessionOrchestrator] Ready for video download!');
+
+          // NOTE: Actual download will be triggered by UI
+          // This just ensures we're connected and ready
+
+        } else {
+          console.error('[SessionOrchestrator] ❌ GoPro WiFi connected but API not reachable');
+        }
+      } else {
+        console.error('[SessionOrchestrator] ❌ Failed to switch to GoPro WiFi');
+      }
+
+      // Update state to idle (UI will show download button)
       this.updateState({
         status: 'idle',
         startTime: null,

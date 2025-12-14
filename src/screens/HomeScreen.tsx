@@ -12,6 +12,7 @@ import { RootStackParamList } from '../../App';
 import { useSessionStore } from '@stores/sessionStore';
 import { useMusicStore } from '@stores/musicStore';
 import { useDeviceStore } from '@stores/deviceStore';
+import { useEventStore } from '@stores/eventStore';
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -21,7 +22,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { config, state, startSession, stopSession, emergencyStop } = useSessionStore();
   const { selectedTrack, loadTracks } = useMusicStore();
   const { devices, refreshStatus } = useDeviceStore();
+  const { events, selectedEventId } = useEventStore();
   const [pulseAnim] = useState(new Animated.Value(1));
+
+  const selectedEvent = events.find((e) => e.id === selectedEventId);
+  const hasCustomerInfo = config.customerName && config.customerPhone;
 
   useEffect(() => {
     // Load music tracks on mount
@@ -58,6 +63,22 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   }, [state.status]);
 
   const handleStartSession = async () => {
+    // Check if customer info is provided
+    if (!hasCustomerInfo) {
+      Alert.alert(
+        'Customer Info Required',
+        'Please enter customer information before starting the session',
+        [
+          {
+            text: 'Enter Info',
+            onPress: () => navigation.navigate('CustomerInput'),
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     try {
       await startSession();
     } catch (error: any) {
@@ -125,6 +146,46 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         {state.error && (
           <Text style={styles.errorText}>{state.error}</Text>
+        )}
+      </View>
+
+      {/* Customer Info Display */}
+      <View style={styles.customerCard}>
+        <View style={styles.customerHeader}>
+          <Text style={styles.customerTitle}>Current Customer</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CustomerInput')}
+            disabled={isRecording || isPreparing}
+          >
+            <Text style={styles.editLink}>
+              {hasCustomerInfo ? 'Change' : '+ Add'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {hasCustomerInfo ? (
+          <View style={styles.customerInfo}>
+            {selectedEvent && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Event:</Text>
+                <Text style={styles.infoValue}>{selectedEvent.name}</Text>
+              </View>
+            )}
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Name:</Text>
+              <Text style={styles.infoValue}>{config.customerName}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Phone:</Text>
+              <Text style={styles.infoValue}>{config.customerPhone}</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.noCustomer}>
+            <Text style={styles.noCustomerText}>
+              Tap "+ Add" to enter customer information
+            </Text>
+          </View>
         )}
       </View>
 
@@ -278,6 +339,54 @@ const styles = StyleSheet.create({
     color: '#f44336',
     fontSize: 14,
     marginTop: 10,
+  },
+  customerCard: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+  },
+  customerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  customerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  editLink: {
+    fontSize: 14,
+    color: '#4caf50',
+    fontWeight: '600',
+  },
+  customerInfo: {
+    gap: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: '#999',
+  },
+  infoValue: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '500',
+  },
+  noCustomer: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  noCustomerText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
   },
   configCard: {
     backgroundColor: '#1e1e1e',

@@ -1,5 +1,6 @@
 import { BleManager, Device, Characteristic } from 'react-native-ble-plx';
 import { IGoProService, GoProStatus, VideoMode, VideoResolution } from '@types/index';
+import { encode as base64Encode } from 'base-64';
 
 // GoPro BLE UUIDs (from OpenGoPro documentation)
 const GOPRO_SERVICE_UUID = '0000fea6-0000-1000-8000-00805f9b34fb';
@@ -9,11 +10,15 @@ const GOPRO_SETTINGS_UUID = 'b5f90074-aa8d-11e3-9046-0002a5d5c51b';
 const GOPRO_SETTINGS_RESPONSE_UUID = 'b5f90075-aa8d-11e3-9046-0002a5d5c51b';
 const GOPRO_STATUS_UUID = 'b5f90076-aa8d-11e3-9046-0002a5d5c51b';
 
-// GoPro Commands
+// GoPro Commands (OpenGoPro BLE API)
 const COMMANDS = {
   SET_SHUTTER_ON: new Uint8Array([0x03, 0x01, 0x01, 0x01]),
   SET_SHUTTER_OFF: new Uint8Array([0x03, 0x01, 0x01, 0x00]),
   GET_STATUS: new Uint8Array([0x01, 0x13]),
+  // Enable AP (WiFi Access Point)
+  // Command: 0x03 (Set Setting), 0x11 (AP Control), 0x01 (length), 0x01 (enable)
+  ENABLE_WIFI: new Uint8Array([0x03, 0x11, 0x01, 0x01]),
+  DISABLE_WIFI: new Uint8Array([0x03, 0x11, 0x01, 0x00]),
 };
 
 export class GoProService implements IGoProService {
@@ -156,7 +161,7 @@ export class GoProService implements IGoProService {
     console.log('[GoPro] Starting recording...');
 
     try {
-      const command = Buffer.from(COMMANDS.SET_SHUTTER_ON).toString('base64');
+      const command = this.uint8ArrayToBase64(COMMANDS.SET_SHUTTER_ON);
       await this.commandChar.writeWithResponse(command);
       console.log('[GoPro] ✅ Recording started');
     } catch (error) {
@@ -173,7 +178,7 @@ export class GoProService implements IGoProService {
     console.log('[GoPro] Stopping recording...');
 
     try {
-      const command = Buffer.from(COMMANDS.SET_SHUTTER_OFF).toString('base64');
+      const command = this.uint8ArrayToBase64(COMMANDS.SET_SHUTTER_OFF);
       await this.commandChar.writeWithResponse(command);
       console.log('[GoPro] ✅ Recording stopped');
     } catch (error) {
@@ -227,6 +232,84 @@ export class GoProService implements IGoProService {
     console.log('[GoPro] Setting resolution:', resolution);
     // Implementation would send appropriate BLE command
     // For now, just log
+  }
+
+  /**
+   * Enable GoPro WiFi Access Point via BLE
+   * This makes the GoPro WiFi network (GP50113778) visible for connection
+   */
+  async enableWiFi(): Promise<void> {
+    console.log('[GoPro] enableWiFi() called');
+    console.log('[GoPro] isConnected:', this.isConnected);
+    console.log('[GoPro] commandChar exists:', !!this.commandChar);
+
+    if (!this.isConnected || !this.commandChar) {
+      const error = new Error('GoPro is not connected via BLE');
+      console.error('[GoPro] Cannot enable WiFi:', error.message);
+      throw error;
+    }
+
+    console.log('[GoPro] Enabling WiFi Access Point via BLE...');
+    console.log('[GoPro] Command bytes:', Array.from(COMMANDS.ENABLE_WIFI));
+
+    try {
+      // Send BLE command to enable WiFi AP
+      const command = this.uint8ArrayToBase64(COMMANDS.ENABLE_WIFI);
+      console.log('[GoPro] Base64 command:', command);
+
+      console.log('[GoPro] Sending BLE command to characteristic...');
+      await this.commandChar.writeWithResponse(command);
+
+      console.log('[GoPro] ✅ WiFi enable command sent successfully');
+      console.log('[GoPro] WiFi network should be broadcasting now: GP50113778');
+      console.log('[GoPro] IMPORTANT: Check your GoPro screen - WiFi icon should appear');
+
+      // Wait a moment for WiFi to activate
+      console.log('[GoPro] Waiting 2 seconds for WiFi hardware to activate...');
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+
+      console.log('[GoPro] WiFi should be ready for connection');
+      console.log('[GoPro] Next step: Phone will scan for WiFi networks');
+    } catch (error) {
+      console.error('[GoPro] ❌ Failed to enable WiFi via BLE:', error);
+      console.error('[GoPro] Error details:', JSON.stringify(error));
+      throw error;
+    }
+  }
+
+  /**
+   * Disable GoPro WiFi Access Point via BLE
+   * Use this after video download is complete to save battery
+   */
+  async disableWiFi(): Promise<void> {
+    if (!this.isConnected || !this.commandChar) {
+      throw new Error('GoPro is not connected');
+    }
+
+    console.log('[GoPro] Disabling WiFi Access Point via BLE...');
+
+    try {
+      // Send BLE command to disable WiFi AP
+      const command = this.uint8ArrayToBase64(COMMANDS.DISABLE_WIFI);
+      await this.commandChar.writeWithResponse(command);
+
+      console.log('[GoPro] ✅ WiFi disable command sent');
+    } catch (error) {
+      console.error('[GoPro] Failed to disable WiFi:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Convert Uint8Array to base64 string (for BLE commands)
+   */
+  private uint8ArrayToBase64(uint8Array: Uint8Array): string {
+    let binary = '';
+    const len = uint8Array.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    return base64Encode(binary);
   }
 
   // Utility method to check connection

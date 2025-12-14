@@ -22,6 +22,9 @@ const DEFAULT_CONFIG: SessionConfig = {
   videoMode: 'standard',
   resolution: '4k',
   ledPreset: 'wedding-white', // Default LED preset
+  eventId: null,
+  customerName: '',
+  customerPhone: '',
 };
 
 export const useSessionStore = create<SessionStore>((set, get) => {

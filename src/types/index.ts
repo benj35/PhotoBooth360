@@ -7,6 +7,9 @@ export interface SessionConfig {
   videoMode: VideoMode;
   resolution: VideoResolution;
   ledPreset: LEDPreset;
+  eventId: string | null; // Selected event
+  customerName: string; // Customer name for current session
+  customerPhone: string; // Customer phone for Telegram delivery
 }
 
 export type LEDPreset = 'off' | 'wedding-white' | 'party-colors' | 'romantic-pink' | 'corporate-blue' | 'energetic-red' | 'cool-purple';
@@ -104,4 +107,36 @@ export interface ISessionOrchestrator {
   stopSession(): Promise<void>;
   getSessionState(): SessionState;
   onStateChange(callback: (state: SessionState) => void): () => void;
+}
+
+// Event Management
+export interface Event {
+  id: string;
+  name: string; // e.g., "Wedding - Sarah & Mike"
+  date: string; // ISO date
+  createdAt: string;
+}
+
+// Session Recording
+export interface SessionRecord {
+  id: string;
+  eventId: string;
+  eventName: string;
+  customerName: string;
+  customerPhone: string;
+  timestamp: string; // ISO timestamp
+  goProVideoNumber: number; // Estimated GoPro file number
+  videoFilename: string | null; // Final edited filename
+  status: 'recording' | 'downloading' | 'editing' | 'uploading' | 'delivered' | 'failed';
+  error: string | null;
+}
+
+// Video Processing
+export interface VideoProcessingJob {
+  sessionId: string;
+  inputPath: string; // Downloaded raw video
+  outputPath: string; // Edited video
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number; // 0-100
+  error: string | null;
 }

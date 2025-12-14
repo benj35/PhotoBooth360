@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
 import ConnectionScreen from './src/screens/ConnectionScreen';
+import CustomerInputScreen from './src/screens/CustomerInputScreen';
 import MusicSelectionScreen from './src/screens/MusicSelectionScreen';
 import SessionConfigScreen from './src/screens/SessionConfigScreen';
 import ManualControlScreen from './src/screens/ManualControlScreen';
@@ -13,6 +14,7 @@ import ManualControlScreen from './src/screens/ManualControlScreen';
 export type RootStackParamList = {
   Home: undefined;
   Connection: undefined;
+  CustomerInput: undefined;
   MusicSelection: undefined;
   SessionConfig: undefined;
   ManualControl: undefined;
@@ -40,6 +42,11 @@ function App(): React.JSX.Element {
             name="Connection"
             component={ConnectionScreen}
             options={{ title: 'Device Setup' }}
+          />
+          <Stack.Screen
+            name="CustomerInput"
+            component={CustomerInputScreen}
+            options={{ title: 'Customer Information' }}
           />
           <Stack.Screen
             name="Home"

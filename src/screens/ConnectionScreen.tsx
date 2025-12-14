@@ -9,10 +9,12 @@ import {
   Alert,
   Platform,
   PermissionsAndroid,
+  Modal,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useDeviceStore } from '@stores/deviceStore';
+import wifiManager from '@services/WiFiManagerService';
 
 type ConnectionScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Connection'>;
@@ -21,6 +23,16 @@ type ConnectionScreenProps = {
 export default function ConnectionScreen({ navigation }: ConnectionScreenProps) {
   const [boothUrl, setBoothUrl] = useState('http://192.168.4.1');
   const [skipGoPro, setSkipGoPro] = useState(false); // Temporary: Skip GoPro for testing
+  const [showWiFiModal, setShowWiFiModal] = useState(false);
+
+  // Booth WiFi credentials
+  const [boothSSID, setBoothSSID] = useState('Benjua');
+  const [boothPassword, setBoothPassword] = useState('AZBH@2025');
+
+  // GoPro WiFi credentials
+  const [goProSSID, setGoProSSID] = useState('GP50113778');
+  const [goProPassword, setGoProPassword] = useState('2gP-Cn5-sSV');
+
   const { devices, connecting, connectGoPro, connectBooth } = useDeviceStore();
 
   const requestBluetoothPermissions = async (): Promise<boolean> => {
@@ -53,6 +65,33 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
       }
     } catch (error) {
       console.error('Error requesting Bluetooth permissions:', error);
+      return false;
+    }
+  };
+
+  const requestLocationPermissions = async (): Promise<boolean> => {
+    if (Platform.OS === 'ios') {
+      // iOS handles location permissions differently
+      return true;
+    }
+
+    try {
+      console.log('[ConnectionScreen] Requesting location permissions for WiFi switching...');
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        {
+          title: 'Location Permission Required',
+          message: 'PhotoBooth360 needs location permission to automatically switch WiFi networks between Booth and GoPro.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+
+      console.log('[ConnectionScreen] Location permission result:', granted);
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      console.error('Error requesting location permissions:', error);
       return false;
     }
   };
@@ -94,10 +133,61 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
   const handleConnectBooth = async () => {
     try {
       await connectBooth(boothUrl);
-      Alert.alert('Success', 'Booth connected successfully');
+
+      // === NEW: Request location permissions and configure WiFi credentials ===
+      try {
+        // Request location permission (required for WiFi operations on Android)
+        const hasLocationPermission = await requestLocationPermissions();
+        console.log('[ConnectionScreen] Location permission granted:', hasLocationPermission);
+
+        if (!hasLocationPermission) {
+          Alert.alert(
+            'Warning',
+            'Location permission is required for automatic WiFi switching. You can still use the app, but WiFi switching will need to be done manually.',
+            [{ text: 'OK' }]
+          );
+          Alert.alert('Success', 'Booth connected successfully');
+          return;
+        }
+
+        // Show modal to configure WiFi credentials
+        setShowWiFiModal(true);
+      } catch (wifiError) {
+        console.error('[ConnectionScreen] Error during WiFi setup:', wifiError);
+        Alert.alert('Success', 'Booth connected successfully');
+      }
     } catch (error: any) {
       Alert.alert('Error', `Failed to connect booth: ${error.message}`);
     }
+  };
+
+  const handleSaveWiFiCredentials = () => {
+    if (!boothSSID.trim() || !boothPassword.trim()) {
+      Alert.alert('Error', 'Please enter Booth WiFi credentials');
+      return;
+    }
+
+    if (!goProSSID.trim() || !goProPassword.trim()) {
+      Alert.alert('Error', 'Please enter GoPro WiFi credentials');
+      return;
+    }
+
+    // Save both sets of credentials
+    wifiManager.setBoothCredentials(boothSSID.trim(), boothPassword.trim());
+    wifiManager.setGoProCredentials(goProSSID.trim(), goProPassword.trim());
+
+    console.log('[ConnectionScreen] WiFi credentials saved:');
+    console.log('[ConnectionScreen] - Booth:', boothSSID);
+    console.log('[ConnectionScreen] - GoPro:', goProSSID);
+
+    setShowWiFiModal(false);
+    Alert.alert('Success', 'Booth connected and WiFi credentials saved!');
+  };
+
+  const handleSkipWiFiSetup = () => {
+    console.log('[ConnectionScreen] User skipped WiFi setup');
+    Alert.alert('Warning', 'WiFi switching will need to be done manually');
+    setShowWiFiModal(false);
   };
 
   const handleContinue = () => {
@@ -117,7 +207,8 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
             text: 'Continue Anyway',
             onPress: () => {
               setSkipGoPro(true);
-              navigation.navigate('Home');
+              // Navigate to Customer Input first
+              navigation.navigate('CustomerInput');
             },
           },
         ]
@@ -125,7 +216,8 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
       return;
     }
 
-    navigation.navigate('Home');
+    // Navigate to Customer Input to set up the first session
+    navigation.navigate('CustomerInput');
   };
 
   return (
@@ -231,6 +323,83 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
       <Text style={styles.helpText}>
         Need help? Make sure Bluetooth is enabled and the GoPro is in pairing mode.
       </Text>
+
+      {/* WiFi Credentials Modal */}
+      <Modal
+        visible={showWiFiModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowWiFiModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.wifiModalContent}>
+            <Text style={styles.modalTitle}>WiFi Configuration</Text>
+            <Text style={styles.modalSubtitle}>
+              Enter WiFi credentials for automatic network switching
+            </Text>
+
+            {/* Booth WiFi Section */}
+            <Text style={styles.sectionTitle}>Booth WiFi (Main Network)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={boothSSID}
+              onChangeText={setBoothSSID}
+              placeholder="Booth WiFi Name (SSID)"
+              placeholderTextColor="#666"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.modalInput}
+              value={boothPassword}
+              onChangeText={setBoothPassword}
+              placeholder="Booth WiFi Password"
+              placeholderTextColor="#666"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            {/* GoPro WiFi Section */}
+            <Text style={styles.sectionTitle}>GoPro WiFi</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={goProSSID}
+              onChangeText={setGoProSSID}
+              placeholder="GoPro WiFi Name (e.g., GP50113778)"
+              placeholderTextColor="#666"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.modalInput}
+              value={goProPassword}
+              onChangeText={setGoProPassword}
+              placeholder="GoPro WiFi Password"
+              placeholderTextColor="#666"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.modalHint}>
+              💡 These credentials enable automatic WiFi switching for video downloads
+            </Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalSkipButton}
+                onPress={handleSkipWiFiSetup}
+              >
+                <Text style={styles.modalSkipText}>Skip</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSaveButton}
+                onPress={handleSaveWiFiCredentials}
+              >
+                <Text style={styles.modalSaveText}>Save & Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -322,5 +491,93 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginTop: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  wifiModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 24,
+    width: '100%',
+    maxWidth: 450,
+    borderWidth: 1,
+    borderColor: '#333',
+    maxHeight: '90%',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4caf50',
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 8,
+  },
+  modalHint: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 20,
+    fontStyle: 'italic',
+  },
+  modalInput: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 8,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalSkipButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: '#333',
+    alignItems: 'center',
+  },
+  modalSkipText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalSaveButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: '#4caf50',
+    alignItems: 'center',
+  },
+  modalSaveText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
