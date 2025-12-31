@@ -8,6 +8,7 @@ export interface SessionConfig {
   resolution: VideoResolution;
   ledPreset: LEDPreset;
   eventId: string | null; // Selected event
+  eventName: string; // Event name for video filename
   customerName: string; // Customer name for current session
   customerPhone: string; // Customer phone for Telegram delivery
 }
@@ -27,10 +28,13 @@ export interface MusicTrack {
 }
 
 export interface SessionState {
-  status: 'idle' | 'preparing' | 'recording' | 'stopping' | 'processing' | 'error';
+  status: 'idle' | 'preparing' | 'recording' | 'stopping' | 'processing' | 'error' | 'downloading' | 'waiting_for_wifi';
   startTime: number | null;
   elapsedTime: number;
   error: string | null;
+  // Download progress tracking
+  downloadStatus?: string; // Current download step description
+  downloadProgress?: number; // 0-100 for download progress
 }
 
 export interface DeviceConnectionState {

@@ -117,6 +117,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const isRecording = state.status === 'recording';
   const isPreparing = state.status === 'preparing';
+  const isDownloading = state.status === 'downloading';
+  const isWaitingForWifi = state.status === 'waiting_for_wifi';
   const canStart = state.status === 'idle' && devices.gopro.connected && devices.booth.connected;
 
   return (
@@ -124,8 +126,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       {/* Status Display */}
       <View style={styles.statusCard}>
         <Text style={styles.statusLabel}>Session Status</Text>
-        <Text style={[styles.statusText, isRecording && styles.statusRecording]}>
-          {state.status.toUpperCase()}
+        <Text style={[
+          styles.statusText,
+          isRecording && styles.statusRecording,
+          isDownloading && styles.statusDownloading,
+          isWaitingForWifi && styles.statusWaitingWifi
+        ]}>
+          {isWaitingForWifi ? 'ACTION REQUIRED' : state.status.toUpperCase().replace('_', ' ')}
         </Text>
 
         {isRecording && (
@@ -141,6 +148,45 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 ]}
               />
             </View>
+          </View>
+        )}
+
+        {/* Download Status Display */}
+        {isDownloading && (
+          <View style={styles.downloadContainer}>
+            <Text style={styles.downloadStatusText}>
+              {state.downloadStatus || 'Starting download...'}
+            </Text>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFillDownload,
+                  { width: `${state.downloadProgress || 0}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.downloadProgressText}>
+              {state.downloadProgress || 0}%
+            </Text>
+          </View>
+        )}
+
+        {/* Waiting for WiFi - User Action Required */}
+        {isWaitingForWifi && (
+          <View style={styles.wifiWaitContainer}>
+            <Text style={styles.wifiWaitTitle}>⚠️ GoPro WiFi Not Found</Text>
+            <Text style={styles.wifiWaitText}>
+              {state.downloadStatus || 'Please activate GoPro WiFi manually'}
+            </Text>
+            <View style={styles.wifiInstructions}>
+              <Text style={styles.wifiStep}>1. Open GoPro Quik app</Text>
+              <Text style={styles.wifiStep}>2. Tap on your GoPro</Text>
+              <Text style={styles.wifiStep}>3. Go to Media → View on Phone</Text>
+              <Text style={styles.wifiStep}>4. Wait for WiFi to activate</Text>
+            </View>
+            <Text style={styles.wifiWaitNote}>
+              App will auto-detect when WiFi is available...
+            </Text>
           </View>
         )}
 
@@ -314,6 +360,71 @@ const styles = StyleSheet.create({
   },
   statusRecording: {
     color: '#f44336',
+  },
+  statusDownloading: {
+    color: '#2196f3',
+  },
+  statusWaitingWifi: {
+    color: '#ff9800',
+  },
+  downloadContainer: {
+    marginTop: 15,
+    width: '100%',
+  },
+  downloadStatusText: {
+    fontSize: 16,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  downloadProgressText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  progressFillDownload: {
+    height: '100%',
+    backgroundColor: '#2196f3',
+  },
+  wifiWaitContainer: {
+    marginTop: 15,
+    width: '100%',
+    backgroundColor: '#2d2000',
+    borderRadius: 8,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#ff9800',
+  },
+  wifiWaitTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ff9800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  wifiWaitText: {
+    fontSize: 14,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  wifiInstructions: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 10,
+  },
+  wifiStep: {
+    fontSize: 14,
+    color: '#ccc',
+    marginBottom: 6,
+  },
+  wifiWaitNote: {
+    fontSize: 12,
+    color: '#888',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   timerContainer: {
     marginTop: 15,

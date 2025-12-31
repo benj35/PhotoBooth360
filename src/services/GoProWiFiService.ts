@@ -141,38 +141,83 @@ export class GoProWiFiService {
 
   /**
    * Generate filename for downloaded video
-   * Format: EventName_CustomerName_Timestamp.mp4
+   * Format: CustomerName_EventName_Date_PhotoBooth360.mp4
    */
   generateFilename(eventName: string, customerName: string): string {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' +
-                     new Date().toISOString().replace(/[:.]/g, '-').split('T')[1].substring(0, 8);
+    // Date format: YYYY-MM-DD
+    const date = new Date().toISOString().split('T')[0];
 
     // Clean names (remove special chars, spaces to underscores)
-    const cleanEvent = eventName.replace(/[^a-zA-Z0-9]/g, '_');
     const cleanCustomer = customerName.replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanEvent = eventName.replace(/[^a-zA-Z0-9]/g, '_');
 
-    return `${cleanEvent}_${cleanCustomer}_${timestamp}.mp4`;
+    // Format: CustomerName_EventName_Date_PhotoBooth360.mp4
+    return `${cleanCustomer}_${cleanEvent}_${date}_PhotoBooth360.mp4`;
+  }
+
+  /**
+   * Generate filename for edited video (raw suffix)
+   * Format: CustomerName_EventName_Date_PhotoBooth360_RAW.mp4
+   */
+  generateRawFilename(eventName: string, customerName: string): string {
+    const date = new Date().toISOString().split('T')[0];
+    const cleanCustomer = customerName.replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanEvent = eventName.replace(/[^a-zA-Z0-9]/g, '_');
+    return `${cleanCustomer}_${cleanEvent}_${date}_PhotoBooth360_RAW.mp4`;
   }
 
   /**
    * Get destination directory for downloads
+   * Uses DCIM folder for visibility in gallery apps and file managers
    */
   getDownloadDirectory(): string {
-    // Use app's document directory
-    return `${RNFS.DocumentDirectoryPath}/PhotoBooth360/Videos`;
+    // Use external storage DCIM directory (visible in gallery and file managers)
+    // This is the standard location for camera photos/videos on Android
+    return `${RNFS.ExternalStorageDirectoryPath}/DCIM/PhotoBooth360`;
   }
 
   /**
    * Ensure download directory exists
+   * Creates in DCIM for gallery visibility, falls back to app storage if needed
    */
   async ensureDownloadDirectory(): Promise<void> {
     const dir = this.getDownloadDirectory();
-    const exists = await RNFS.exists(dir);
+    console.log('[GoProWiFi] Ensuring download directory exists:', dir);
 
-    if (!exists) {
-      console.log('[GoProWiFi] Creating download directory:', dir);
-      await RNFS.mkdir(dir, { NSURLIsExcludedFromBackupKey: true });
+    try {
+      const exists = await RNFS.exists(dir);
+
+      if (!exists) {
+        console.log('[GoProWiFi] Creating download directory:', dir);
+        await RNFS.mkdir(dir, { NSURLIsExcludedFromBackupKey: false });
+        console.log('[GoProWiFi] ✅ Download directory created');
+      } else {
+        console.log('[GoProWiFi] ✅ Download directory already exists');
+      }
+    } catch (error) {
+      console.error('[GoProWiFi] Failed to create DCIM directory, falling back to app storage:', error);
+      // Fallback to internal app storage if external fails (permission issues)
+      const fallbackDir = `${RNFS.DocumentDirectoryPath}/PhotoBooth360/Videos`;
+      const fallbackExists = await RNFS.exists(fallbackDir);
+      if (!fallbackExists) {
+        await RNFS.mkdir(fallbackDir, { NSURLIsExcludedFromBackupKey: true });
+      }
+      // Update the getDownloadDirectory to return fallback
+      this.useFallbackStorage = true;
+      console.log('[GoProWiFi] Using fallback directory:', fallbackDir);
     }
+  }
+
+  private useFallbackStorage: boolean = false;
+
+  /**
+   * Get the actual download directory (handles fallback)
+   */
+  getActualDownloadDirectory(): string {
+    if (this.useFallbackStorage) {
+      return `${RNFS.DocumentDirectoryPath}/PhotoBooth360/Videos`;
+    }
+    return this.getDownloadDirectory();
   }
 
   /**

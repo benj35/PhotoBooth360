@@ -133,14 +133,33 @@ export class WiFiManagerService {
 
       // Connect to GoPro WiFi
       console.log('[WiFiManager] Connecting to GoPro WiFi:', this.goProSSID);
-      await WifiManager.connectToProtectedSSID(
-        this.goProSSID,
-        this.goProPassword,
-        false, // Not hidden network
-        false  // Not WEP (using WPA2)
-      );
+      console.log('[WiFiManager] Password length:', this.goProPassword.length);
+      console.log('[WiFiManager] Password first 3 chars:', this.goProPassword.substring(0, 3));
 
-      console.log('[WiFiManager] ✅ Connected to GoPro WiFi');
+      // Try connecting with isWep=false (WPA/WPA2)
+      try {
+        await WifiManager.connectToProtectedSSID(
+          this.goProSSID,
+          this.goProPassword,
+          false, // Not hidden network
+          false  // Not WEP (using WPA2)
+        );
+        console.log('[WiFiManager] ✅ Connected to GoPro WiFi');
+      } catch (connectError) {
+        console.error('[WiFiManager] First connection attempt failed:', connectError);
+
+        // Sometimes Android needs a retry
+        console.log('[WiFiManager] Retrying connection...');
+        await this.sleep(2000);
+
+        await WifiManager.connectToProtectedSSID(
+          this.goProSSID,
+          this.goProPassword,
+          false,
+          false
+        );
+        console.log('[WiFiManager] ✅ Connected to GoPro WiFi (on retry)');
+      }
       this.currentNetwork = 'gopro';
 
       // Wait for connection to stabilize
@@ -259,6 +278,63 @@ export class WiFiManagerService {
       console.error('[WiFiManager] Failed to scan networks:', error);
       return [];
     }
+  }
+
+  /**
+   * Check if GoPro WiFi is available (visible in scan)
+   * Returns true if the GoPro WiFi network is broadcasting
+   */
+  async isGoProWiFiAvailable(): Promise<boolean> {
+    try {
+      if (!this.goProSSID) {
+        console.log('[WiFiManager] GoPro SSID not configured');
+        return false;
+      }
+
+      console.log('[WiFiManager] Checking if GoPro WiFi is available...');
+      console.log('[WiFiManager] Looking for SSID:', this.goProSSID);
+
+      const networks = await WifiManager.loadWifiList();
+      const goProNetwork = networks.find((net: any) => net.SSID === this.goProSSID);
+
+      if (goProNetwork) {
+        console.log('[WiFiManager] ✅ GoPro WiFi is available (Signal:', goProNetwork.level, ')');
+        return true;
+      } else {
+        console.log('[WiFiManager] ❌ GoPro WiFi is NOT available');
+        console.log('[WiFiManager] Available networks:', networks.map((n: any) => n.SSID).join(', '));
+        return false;
+      }
+    } catch (error) {
+      console.error('[WiFiManager] Error checking GoPro WiFi availability:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Wait for GoPro WiFi to become available (with timeout)
+   * Returns true if WiFi becomes available within timeout
+   */
+  async waitForGoProWiFi(maxWaitSeconds: number = 30, checkIntervalMs: number = 3000): Promise<boolean> {
+    console.log(`[WiFiManager] Waiting up to ${maxWaitSeconds}s for GoPro WiFi to appear...`);
+
+    const startTime = Date.now();
+    const maxWaitMs = maxWaitSeconds * 1000;
+
+    while (Date.now() - startTime < maxWaitMs) {
+      const available = await this.isGoProWiFiAvailable();
+      if (available) {
+        return true;
+      }
+
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      console.log(`[WiFiManager] GoPro WiFi not found yet... (${elapsed}s elapsed)`);
+
+      await this.sleep(checkIntervalMs);
+    }
+
+    console.log('[WiFiManager] ❌ Timeout waiting for GoPro WiFi');
+    return false;
   }
 
   /**

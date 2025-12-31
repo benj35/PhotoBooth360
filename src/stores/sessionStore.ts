@@ -23,6 +23,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   resolution: '4k',
   ledPreset: 'wedding-white', // Default LED preset
   eventId: null,
+  eventName: '',
   customerName: '',
   customerPhone: '',
 };

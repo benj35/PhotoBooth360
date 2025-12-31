@@ -30,8 +30,9 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
   const [boothPassword, setBoothPassword] = useState('AZBH@2025');
 
   // GoPro WiFi credentials
-  const [goProSSID, setGoProSSID] = useState('GP50113778');
-  const [goProPassword, setGoProPassword] = useState('2gP-Cn5-sSV');
+  // Note: SSID is "HERO13 Black" (not the serial number "GP50113778")
+  const [goProSSID, setGoProSSID] = useState('HERO13 Black');
+  const [goProPassword, setGoProPassword] = useState('R2Q-P>T-fpy');
 
   const { devices, connecting, connectGoPro, connectBooth } = useDeviceStore();
 

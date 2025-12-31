@@ -18,8 +18,8 @@ export class SessionOrchestrator implements ISessionOrchestrator {
   };
 
   private stateChangeCallbacks: Array<(state: SessionState) => void> = [];
-  private sessionTimer: NodeJS.Timeout | null = null;
-  private elapsedTimer: NodeJS.Timeout | null = null;
+  private sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Start a new recording session
@@ -139,46 +139,246 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
       console.log('[SessionOrchestrator] All devices stopped successfully');
 
-      // === NEW: AUTOMATIC WIFI SWITCHING FOR VIDEO DOWNLOAD ===
-      console.log('[SessionOrchestrator] Starting automatic video download workflow...');
-
-      // Step 1: Enable GoPro WiFi via BLE (required for Hero 13)
-      console.log('[SessionOrchestrator] Enabling GoPro WiFi Access Point via BLE...');
+      // === AUTOMATIC WIFI SWITCHING FOR VIDEO DOWNLOAD ===
+      // Wrapped in try-catch to prevent crashes - WiFi switching is optional
       try {
-        await goProService.enableWiFi();
-        console.log('[SessionOrchestrator] ✅ GoPro WiFi enabled via BLE');
+        console.log('[SessionOrchestrator] Starting automatic video download workflow...');
 
-        // Wait for GoPro WiFi to fully activate (network needs time to broadcast)
-        console.log('[SessionOrchestrator] Waiting 10 seconds for WiFi network to become visible...');
-        console.log('[SessionOrchestrator] PLEASE CHECK: Look at GoPro screen - is WiFi icon visible?');
-        await this.delay(10000);
-      } catch (error) {
-        console.error('[SessionOrchestrator] ❌ Failed to enable GoPro WiFi via BLE:', error);
-        // Continue anyway - maybe WiFi was already enabled
-      }
+        // Update status - starting download workflow
+        this.updateState({
+          ...this.sessionState,
+          status: 'downloading',
+          downloadStatus: 'Enabling GoPro WiFi...',
+          downloadProgress: 0,
+        });
 
-      // Step 2: Switch to GoPro WiFi
-      console.log('[SessionOrchestrator] Switching to GoPro WiFi network for download...');
-      const switchSuccess = await wifiManager.switchToGoProWiFi();
-
-      if (switchSuccess) {
-        console.log('[SessionOrchestrator] ✅ Connected to GoPro WiFi');
-
-        // Step 3: Test GoPro WiFi connection
-        const goProConnected = await goProWiFiService.testConnection();
-
-        if (goProConnected) {
-          console.log('[SessionOrchestrator] ✅ GoPro HTTP API is reachable');
-          console.log('[SessionOrchestrator] Ready for video download!');
-
-          // NOTE: Actual download will be triggered by UI
-          // This just ensures we're connected and ready
-
-        } else {
-          console.error('[SessionOrchestrator] ❌ GoPro WiFi connected but API not reachable');
+        // Step 1: Enable GoPro WiFi via BLE (required for Hero 13)
+        console.log('[SessionOrchestrator] Enabling GoPro WiFi Access Point via BLE...');
+        try {
+          await goProService.enableWiFi();
+          console.log('[SessionOrchestrator] ✅ GoPro WiFi enabled via BLE');
+        } catch (enableError) {
+          console.error('[SessionOrchestrator] ❌ Failed to enable GoPro WiFi via BLE:', enableError);
+          // Continue anyway - maybe WiFi was already enabled
         }
-      } else {
-        console.error('[SessionOrchestrator] ❌ Failed to switch to GoPro WiFi');
+
+        // Step 2: Check if GoPro WiFi is available
+        this.updateState({
+          ...this.sessionState,
+          downloadStatus: 'Scanning for GoPro WiFi...',
+          downloadProgress: 10,
+        });
+
+        // First quick check
+        let wifiAvailable = await wifiManager.isGoProWiFiAvailable();
+
+        if (!wifiAvailable) {
+          // WiFi not available - wait a bit and check again
+          this.updateState({
+            ...this.sessionState,
+            downloadStatus: 'Waiting for GoPro WiFi to appear...',
+            downloadProgress: 12,
+          });
+
+          // Wait up to 15 seconds for WiFi to appear
+          wifiAvailable = await wifiManager.waitForGoProWiFi(15, 3000);
+        }
+
+        if (!wifiAvailable) {
+          // Still not available - prompt user to activate via GoPro Quik
+          console.log('[SessionOrchestrator] ⚠️ GoPro WiFi not available - user needs to activate via Quik app');
+          this.updateState({
+            ...this.sessionState,
+            status: 'waiting_for_wifi',
+            downloadStatus: 'Open GoPro Quik → Media → Transfer to activate WiFi',
+            downloadProgress: 0,
+          });
+
+          // Wait for user action - check every 5 seconds for up to 2 minutes
+          const maxWaitForUser = 120; // 2 minutes
+          const checkInterval = 5000; // 5 seconds
+          const startWait = Date.now();
+
+          while (Date.now() - startWait < maxWaitForUser * 1000) {
+            await this.delay(checkInterval);
+            wifiAvailable = await wifiManager.isGoProWiFiAvailable();
+
+            if (wifiAvailable) {
+              console.log('[SessionOrchestrator] ✅ GoPro WiFi is now available!');
+              this.updateState({
+                ...this.sessionState,
+                downloadStatus: 'GoPro WiFi detected!',
+                downloadProgress: 15,
+              });
+              break;
+            }
+
+            const elapsed = Math.round((Date.now() - startWait) / 1000);
+            console.log(`[SessionOrchestrator] Still waiting for GoPro WiFi... (${elapsed}s)`);
+          }
+
+          if (!wifiAvailable) {
+            console.error('[SessionOrchestrator] ❌ User did not activate GoPro WiFi in time');
+            this.updateState({
+              ...this.sessionState,
+              downloadStatus: 'WiFi activation timed out - video not downloaded',
+              downloadProgress: 0,
+            });
+            // Skip the download workflow
+            throw new Error('GoPro WiFi not activated');
+          }
+        }
+
+        // Step 3: Switch to GoPro WiFi (using pre-configured credentials from ConnectionScreen)
+        this.updateState({
+          ...this.sessionState,
+          downloadStatus: 'Connecting to GoPro WiFi...',
+          downloadProgress: 20,
+        });
+        console.log('[SessionOrchestrator] Switching to GoPro WiFi network for download...');
+        let switchSuccess = false;
+        try {
+          switchSuccess = await wifiManager.switchToGoProWiFi();
+        } catch (switchError) {
+          console.error('[SessionOrchestrator] ❌ WiFi switch error:', switchError);
+        }
+
+        if (switchSuccess) {
+          console.log('[SessionOrchestrator] ✅ Connected to GoPro WiFi');
+
+          // Step 3: Test GoPro WiFi connection
+          this.updateState({
+            ...this.sessionState,
+            downloadStatus: 'Testing GoPro connection...',
+            downloadProgress: 30,
+          });
+          try {
+            const goProConnected = await goProWiFiService.testConnection();
+
+            if (goProConnected) {
+              console.log('[SessionOrchestrator] ✅ GoPro HTTP API is reachable');
+
+              // Step 4: Download the latest video
+              this.updateState({
+                ...this.sessionState,
+                downloadStatus: 'Finding latest video...',
+                downloadProgress: 40,
+              });
+              console.log('[SessionOrchestrator] Starting video download...');
+              try {
+                // Ensure download directory exists
+                await goProWiFiService.ensureDownloadDirectory();
+
+                // Get the latest video info
+                const latestVideo = await goProWiFiService.getLatestVideo();
+
+                if (latestVideo) {
+                  const sizeMB = Math.round(latestVideo.size / 1024 / 1024);
+                  console.log('[SessionOrchestrator] Latest video found:', latestVideo.filename);
+                  console.log('[SessionOrchestrator] Size:', sizeMB, 'MB');
+
+                  this.updateState({
+                    ...this.sessionState,
+                    downloadStatus: `Downloading video (${sizeMB} MB)...`,
+                    downloadProgress: 45,
+                  });
+
+                  // Generate destination filename
+                  const destFilename = goProWiFiService.generateFilename('PhotoBooth', 'Session');
+                  const destPath = `${goProWiFiService.getActualDownloadDirectory()}/${destFilename}`;
+
+                  console.log('[SessionOrchestrator] Downloading to:', destPath);
+
+                  // Download with progress
+                  const downloadedPath = await goProWiFiService.downloadVideo(
+                    latestVideo.filename,
+                    destPath,
+                    (progress) => {
+                      console.log(`[SessionOrchestrator] Download progress: ${progress}%`);
+                      // Map download progress to 45-90% of total progress
+                      const totalProgress = 45 + Math.round(progress * 0.45);
+                      this.updateState({
+                        ...this.sessionState,
+                        downloadStatus: `Downloading... ${progress}%`,
+                        downloadProgress: totalProgress,
+                      });
+                    }
+                  );
+
+                  console.log('[SessionOrchestrator] ✅ Video downloaded:', downloadedPath);
+
+                  // Step 5: Switch back to booth WiFi
+                  this.updateState({
+                    ...this.sessionState,
+                    downloadStatus: 'Switching back to booth WiFi...',
+                    downloadProgress: 96,
+                  });
+                  console.log('[SessionOrchestrator] Switching back to booth WiFi...');
+                  try {
+                    const switchBackSuccess = await wifiManager.switchToBoothWiFi();
+                    if (switchBackSuccess) {
+                      console.log('[SessionOrchestrator] ✅ Back on booth WiFi');
+                      this.updateState({
+                        ...this.sessionState,
+                        downloadStatus: 'Download complete!',
+                        downloadProgress: 100,
+                      });
+                    } else {
+                      console.error('[SessionOrchestrator] ❌ Failed to switch back to booth WiFi');
+                      this.updateState({
+                        ...this.sessionState,
+                        downloadStatus: 'Download complete (WiFi switch failed)',
+                        downloadProgress: 100,
+                      });
+                    }
+                  } catch (switchBackError) {
+                    console.error('[SessionOrchestrator] ❌ Switch back error:', switchBackError);
+                  }
+
+                } else {
+                  console.error('[SessionOrchestrator] ❌ No video found on GoPro');
+                  this.updateState({
+                    ...this.sessionState,
+                    downloadStatus: 'No video found on GoPro',
+                    downloadProgress: 0,
+                  });
+                }
+              } catch (downloadError) {
+                console.error('[SessionOrchestrator] ❌ Download failed:', downloadError);
+                this.updateState({
+                  ...this.sessionState,
+                  downloadStatus: 'Download failed',
+                  downloadProgress: 0,
+                });
+              }
+
+            } else {
+              console.error('[SessionOrchestrator] ❌ GoPro WiFi connected but API not reachable');
+              this.updateState({
+                ...this.sessionState,
+                downloadStatus: 'GoPro API not reachable',
+                downloadProgress: 0,
+              });
+            }
+          } catch (testError) {
+            console.error('[SessionOrchestrator] ❌ GoPro connection test error:', testError);
+          }
+        } else {
+          console.error('[SessionOrchestrator] ❌ Failed to switch to GoPro WiFi');
+          this.updateState({
+            ...this.sessionState,
+            downloadStatus: 'WiFi switch failed',
+            downloadProgress: 0,
+          });
+        }
+      } catch (wifiWorkflowError) {
+        console.error('[SessionOrchestrator] ❌ WiFi workflow failed (non-fatal):', wifiWorkflowError);
+        this.updateState({
+          ...this.sessionState,
+          downloadStatus: 'WiFi workflow failed',
+          downloadProgress: 0,
+        });
+        // This is non-fatal - session completed, just WiFi switching failed
       }
 
       // Update state to idle (UI will show download button)

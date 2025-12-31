@@ -1,6 +1,6 @@
 import { BleManager, Device, Characteristic } from 'react-native-ble-plx';
 import { IGoProService, GoProStatus, VideoMode, VideoResolution } from '@types/index';
-import { encode as base64Encode } from 'base-64';
+import { encode as base64Encode, decode as base64Decode } from 'base-64';
 
 // GoPro BLE UUIDs (from OpenGoPro documentation)
 const GOPRO_SERVICE_UUID = '0000fea6-0000-1000-8000-00805f9b34fb';
@@ -15,22 +15,81 @@ const COMMANDS = {
   SET_SHUTTER_ON: new Uint8Array([0x03, 0x01, 0x01, 0x01]),
   SET_SHUTTER_OFF: new Uint8Array([0x03, 0x01, 0x01, 0x00]),
   GET_STATUS: new Uint8Array([0x01, 0x13]),
-  // Enable AP (WiFi Access Point)
-  // Command: 0x03 (Set Setting), 0x11 (AP Control), 0x01 (length), 0x01 (enable)
+
+  // WiFi AP Control Commands (multiple methods for compatibility)
+  // Method 1: Setting-based AP control (0x11 = AP Control setting)
   ENABLE_WIFI: new Uint8Array([0x03, 0x11, 0x01, 0x01]),
   DISABLE_WIFI: new Uint8Array([0x03, 0x11, 0x01, 0x00]),
+
+  // Method 2: OpenGoPro WiFi AP Enable command (Command ID 0x17 = AP Control)
+  // Command structure: [length, command_id, param_length, param_value]
+  // Mode: 0=disable, 1=enable, 2=bounce (disable then enable)
+  WIFI_AP_ON: new Uint8Array([0x03, 0x17, 0x01, 0x01]),    // Enable AP
+  WIFI_AP_OFF: new Uint8Array([0x03, 0x17, 0x01, 0x00]),   // Disable AP
+  WIFI_AP_BOUNCE: new Uint8Array([0x03, 0x17, 0x01, 0x02]), // Bounce (restart) AP
+
+  // Method 3: Keep Alive / Wake command to ensure camera is responsive
+  KEEP_ALIVE: new Uint8Array([0x03, 0x5B, 0x01, 0x42]),
+
+  // Set Turbo Transfer - sometimes needed to activate WiFi properly
+  TURBO_ON: new Uint8Array([0x03, 0xD6, 0x01, 0x01]),
+  TURBO_OFF: new Uint8Array([0x03, 0xD6, 0x01, 0x00]),
+
+  // Query WiFi AP SSID - Status ID 0x72 (114)
+  GET_AP_SSID: new Uint8Array([0x01, 0x72]),
+  // Query WiFi AP Password - Status ID 0x73 (115)
+  GET_AP_PASSWORD: new Uint8Array([0x01, 0x73]),
+  // Query WiFi AP State (on/off) - Status ID 0x45 (69)
+  GET_AP_STATE: new Uint8Array([0x01, 0x45]),
 };
+
+// Query Response UUID for receiving query responses
+const GOPRO_QUERY_UUID = 'b5f90076-aa8d-11e3-9046-0002a5d5c51b';
+const GOPRO_QUERY_RESPONSE_UUID = 'b5f90077-aa8d-11e3-9046-0002a5d5c51b';
+
+export interface WiFiAPInfo {
+  ssid: string;
+  password: string;
+  enabled: boolean;
+}
 
 export class GoProService implements IGoProService {
   private bleManager: BleManager | null = null;
   private device: Device | null = null;
   private commandChar: Characteristic | null = null;
+  private commandResponseChar: Characteristic | null = null;
+  private queryChar: Characteristic | null = null;
+  private queryResponseChar: Characteristic | null = null;
   private statusChar: Characteristic | null = null;
   private isConnected = false;
+
+  // Response handler for command responses
+  private pendingCommandResponse: ((data: Uint8Array) => void) | null = null;
 
   constructor() {
     // Initialize BLE manager lazily to avoid startup crashes
     console.log('[GoPro] GoProService initialized');
+  }
+
+  /**
+   * Handle incoming command response notifications
+   */
+  private handleCommandResponse(value: string): void {
+    try {
+      const decoded = base64Decode(value);
+      const bytes = new Uint8Array(decoded.length);
+      for (let i = 0; i < decoded.length; i++) {
+        bytes[i] = decoded.charCodeAt(i);
+      }
+
+      // If there's a pending response handler, call it
+      if (this.pendingCommandResponse) {
+        this.pendingCommandResponse(bytes);
+        this.pendingCommandResponse = null;
+      }
+    } catch (e) {
+      console.log('[GoPro] Error decoding command response:', e);
+    }
   }
 
   private ensureBleManager(): BleManager {
@@ -113,26 +172,67 @@ export class GoProService implements IGoProService {
 
             const characteristics = await goProService.characteristics();
             this.commandChar = characteristics.find(c => c.uuid.toLowerCase() === GOPRO_COMMAND_UUID) || null;
+            this.commandResponseChar = characteristics.find(c => c.uuid.toLowerCase() === GOPRO_COMMAND_RESPONSE_UUID) || null;
+            this.queryChar = characteristics.find(c => c.uuid.toLowerCase() === GOPRO_QUERY_UUID) || null;
+            this.queryResponseChar = characteristics.find(c => c.uuid.toLowerCase() === GOPRO_QUERY_RESPONSE_UUID) || null;
             this.statusChar = characteristics.find(c => c.uuid.toLowerCase() === GOPRO_STATUS_UUID) || null;
+
+            console.log('[GoPro] Characteristics found:');
+            console.log('[GoPro]   - Command:', !!this.commandChar);
+            console.log('[GoPro]   - Command Response:', !!this.commandResponseChar);
+            console.log('[GoPro]   - Query:', !!this.queryChar);
+            console.log('[GoPro]   - Query Response:', !!this.queryResponseChar);
 
             if (!this.commandChar) {
               throw new Error('Command characteristic not found');
             }
 
-            // TODO: Subscribe to status updates (disabled for now to prevent crashes)
-            // The monitor() callback can cause issues if not properly handled
-            // if (this.statusChar) {
-            //   await this.statusChar.monitor((error, characteristic) => {
-            //     if (error) {
-            //       console.error('[GoPro] Status monitor error:', error);
-            //       return;
-            //     }
-            //     console.log('[GoPro] Status update received');
-            //   });
-            // }
+            // IMPORTANT: Enable notifications on response characteristics
+            // Per OpenGoPro docs: "The GoPro device does not support caching subscriptions
+            // so characteristics must be re-subscribed upon each connection"
+            console.log('[GoPro] Enabling notifications on response characteristics...');
+
+            if (this.commandResponseChar) {
+              try {
+                // Start monitoring - this enables notifications
+                this.commandResponseChar.monitor((error, char) => {
+                  if (error) {
+                    // Only log if it's not a disconnection
+                    if (!error.message?.includes('disconnected')) {
+                      console.log('[GoPro] Command Response notification error:', error.message);
+                    }
+                    return;
+                  }
+                  // Handle the response via our handler
+                  if (char?.value) {
+                    this.handleCommandResponse(char.value);
+                  }
+                });
+                console.log('[GoPro]   ✅ Command Response notifications enabled');
+              } catch (e: any) {
+                console.log('[GoPro]   ⚠️ Failed to enable Command Response notifications:', e.message);
+              }
+            }
+
+            if (this.queryResponseChar) {
+              try {
+                this.queryResponseChar.monitor((error, _char) => {
+                  if (error && !error.message?.includes('disconnected')) {
+                    console.log('[GoPro] Query Response notification error:', error.message);
+                  }
+                });
+                console.log('[GoPro]   ✅ Query Response notifications enabled');
+              } catch (e: any) {
+                console.log('[GoPro]   ⚠️ Failed to enable Query Response notifications:', e.message);
+              }
+            }
+
+            // Wait a moment for the camera to be ready
+            console.log('[GoPro] Waiting for camera to be ready...');
+            await new Promise<void>(res => setTimeout(res, 1000));
 
             this.isConnected = true;
-            console.log('[GoPro] Connection complete');
+            console.log('[GoPro] ✅ Connection complete - notifications enabled');
             resolve();
           } catch (err) {
             reject(err);
@@ -235,13 +335,74 @@ export class GoProService implements IGoProService {
   }
 
   /**
+   * Send a BLE command and wait for response notification
+   * Returns the response bytes or null if timeout
+   */
+  private async sendCommandWithResponse(
+    command: Uint8Array,
+    description: string,
+    timeoutMs: number = 3000
+  ): Promise<Uint8Array | null> {
+    if (!this.commandChar) {
+      console.log(`[GoPro] ${description}: Missing command characteristic`);
+      return null;
+    }
+
+    return new Promise(async (resolve) => {
+      const timeout = setTimeout(() => {
+        console.log(`[GoPro] ${description}: Timeout waiting for response`);
+        this.pendingCommandResponse = null;
+        resolve(null);
+      }, timeoutMs);
+
+      try {
+        // Set up response handler BEFORE sending command
+        this.pendingCommandResponse = (bytes: Uint8Array) => {
+          clearTimeout(timeout);
+
+          console.log(`[GoPro] ${description}: Response: [${Array.from(bytes).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
+
+          // Check if response indicates success
+          // Response format: [length, command_id, status]
+          // Status 0x00 = success, 0x01 = error, 0x02 = invalid param
+          if (bytes.length >= 3) {
+            const status = bytes[2];
+            if (status === 0x00) {
+              console.log(`[GoPro] ${description}: ✅ SUCCESS`);
+            } else {
+              console.log(`[GoPro] ${description}: ⚠️ Status: ${status} (0=ok, 1=err, 2=invalid)`);
+            }
+          }
+
+          resolve(bytes);
+        };
+
+        // Send the command
+        const commandBase64 = this.uint8ArrayToBase64(command);
+        console.log(`[GoPro] ${description}: Sending [${Array.from(command).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
+        await this.commandChar!.writeWithResponse(commandBase64);
+        console.log(`[GoPro] ${description}: Command sent, waiting for response...`);
+
+      } catch (sendError: any) {
+        clearTimeout(timeout);
+        this.pendingCommandResponse = null;
+        console.log(`[GoPro] ${description}: Send error:`, sendError.message);
+        resolve(null);
+      }
+    });
+  }
+
+  /**
    * Enable GoPro WiFi Access Point via BLE
-   * This makes the GoPro WiFi network (GP50113778) visible for connection
+   * This makes the GoPro WiFi network (HERO13 Black) visible for connection
+   *
+   * Tries multiple command methods for compatibility with Hero 13
    */
   async enableWiFi(): Promise<void> {
     console.log('[GoPro] enableWiFi() called');
     console.log('[GoPro] isConnected:', this.isConnected);
     console.log('[GoPro] commandChar exists:', !!this.commandChar);
+    console.log('[GoPro] commandResponseChar exists:', !!this.commandResponseChar);
 
     if (!this.isConnected || !this.commandChar) {
       const error = new Error('GoPro is not connected via BLE');
@@ -249,31 +410,163 @@ export class GoProService implements IGoProService {
       throw error;
     }
 
-    console.log('[GoPro] Enabling WiFi Access Point via BLE...');
-    console.log('[GoPro] Command bytes:', Array.from(COMMANDS.ENABLE_WIFI));
+    console.log('[GoPro] ========================================');
+    console.log('[GoPro] Enabling WiFi Access Point via BLE');
+    console.log('[GoPro] ========================================');
 
     try {
-      // Send BLE command to enable WiFi AP
-      const command = this.uint8ArrayToBase64(COMMANDS.ENABLE_WIFI);
-      console.log('[GoPro] Base64 command:', command);
+      // Step 1: Send Keep Alive to wake up camera
+      console.log('[GoPro] Step 1/4: Sending Keep Alive...');
+      await this.sendCommandWithResponse(COMMANDS.KEEP_ALIVE, 'Keep Alive', 2000);
+      await new Promise<void>((resolve) => setTimeout(resolve, 300));
 
-      console.log('[GoPro] Sending BLE command to characteristic...');
-      await this.commandChar.writeWithResponse(command);
+      // Step 2: Try BOUNCE command first (most reliable - disables then enables)
+      console.log('[GoPro] Step 2/4: Sending WIFI_AP_BOUNCE (mode=2)...');
+      const bounceResult = await this.sendCommandWithResponse(COMMANDS.WIFI_AP_BOUNCE, 'AP Bounce', 3000);
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
-      console.log('[GoPro] ✅ WiFi enable command sent successfully');
-      console.log('[GoPro] WiFi network should be broadcasting now: GP50113778');
-      console.log('[GoPro] IMPORTANT: Check your GoPro screen - WiFi icon should appear');
+      // Step 3: If bounce failed, try direct enable
+      if (!bounceResult) {
+        console.log('[GoPro] Step 3/4: Bounce failed, trying direct WIFI_AP_ON (mode=1)...');
+        await this.sendCommandWithResponse(COMMANDS.WIFI_AP_ON, 'AP Enable', 3000);
+        await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      } else {
+        console.log('[GoPro] Step 3/4: Skipped (bounce succeeded)');
+      }
 
-      // Wait a moment for WiFi to activate
-      console.log('[GoPro] Waiting 2 seconds for WiFi hardware to activate...');
-      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      // Step 4: Enable Turbo Transfer (may help activate WiFi)
+      console.log('[GoPro] Step 4/4: Sending Turbo Transfer ON...');
+      await this.sendCommandWithResponse(COMMANDS.TURBO_ON, 'Turbo Transfer', 2000);
 
-      console.log('[GoPro] WiFi should be ready for connection');
-      console.log('[GoPro] Next step: Phone will scan for WiFi networks');
+      console.log('[GoPro] ========================================');
+      console.log('[GoPro] ✅ All WiFi enable commands sent');
+      console.log('[GoPro] WiFi network should appear: HERO13 Black');
+      console.log('[GoPro] ========================================');
+
+      // Wait for WiFi hardware to fully activate
+      console.log('[GoPro] Waiting 4 seconds for WiFi to activate...');
+      await new Promise<void>((resolve) => setTimeout(resolve, 4000));
+
+      console.log('[GoPro] WiFi should now be ready for connection');
     } catch (error) {
       console.error('[GoPro] ❌ Failed to enable WiFi via BLE:', error);
-      console.error('[GoPro] Error details:', JSON.stringify(error));
       throw error;
+    }
+  }
+
+  /**
+   * Query WiFi AP credentials from GoPro via BLE
+   * This gets the actual SSID and password the camera is using
+   *
+   * NOTE: This is experimental - if it fails, we fall back to pre-configured credentials
+   */
+  async getWiFiAPInfo(): Promise<WiFiAPInfo> {
+    console.log('[GoPro] getWiFiAPInfo() called');
+    console.log('[GoPro] isConnected:', this.isConnected);
+    console.log('[GoPro] queryChar exists:', !!this.queryChar);
+    console.log('[GoPro] queryResponseChar exists:', !!this.queryResponseChar);
+
+    // If query characteristics aren't available, return empty info
+    // This is not a fatal error - we can fall back to pre-configured credentials
+    if (!this.isConnected) {
+      console.log('[GoPro] Not connected, returning empty WiFi info');
+      return { ssid: '', password: '', enabled: false };
+    }
+
+    if (!this.queryChar || !this.queryResponseChar) {
+      console.log('[GoPro] Query characteristics not available, returning empty WiFi info');
+      console.log('[GoPro] This is normal - will use pre-configured credentials instead');
+      return { ssid: '', password: '', enabled: false };
+    }
+
+    console.log('[GoPro] Querying WiFi AP credentials via BLE...');
+
+    try {
+      let ssid = '';
+      let password = '';
+      let enabled = false;
+
+      // Helper to send query and wait for response
+      const sendQuery = async (command: Uint8Array, description: string): Promise<string> => {
+        return new Promise(async (resolve, reject) => {
+          const timeout = setTimeout(() => {
+            console.log(`[GoPro] ${description} query timed out`);
+            resolve(''); // Resolve with empty string instead of rejecting
+          }, 3000);
+
+          try {
+            // Set up response listener
+            const subscription = this.queryResponseChar!.monitor((error, characteristic) => {
+              if (error) {
+                clearTimeout(timeout);
+                subscription.remove();
+                console.error(`[GoPro] ${description} monitor error:`, error);
+                resolve(''); // Resolve with empty string instead of rejecting
+                return;
+              }
+
+              if (characteristic?.value) {
+                clearTimeout(timeout);
+                subscription.remove();
+
+                try {
+                  // Decode base64 response
+                  const decoded = base64Decode(characteristic.value);
+                  console.log(`[GoPro] ${description} response received, length:`, decoded.length);
+
+                  // Parse response - format is: [length, status_id, data_length, ...data]
+                  // Skip first 3 bytes (header) and extract string data
+                  const dataBytes = decoded.slice(3);
+                  resolve(dataBytes);
+                } catch (decodeError) {
+                  console.error(`[GoPro] ${description} decode error:`, decodeError);
+                  resolve('');
+                }
+              }
+            });
+
+            // Send query command
+            const commandBase64 = this.uint8ArrayToBase64(command);
+            await this.queryChar!.writeWithResponse(commandBase64);
+            console.log(`[GoPro] ${description} query sent`);
+          } catch (sendError) {
+            clearTimeout(timeout);
+            console.error(`[GoPro] ${description} send error:`, sendError);
+            resolve(''); // Resolve with empty string instead of rejecting
+          }
+        });
+      };
+
+      // Query SSID
+      console.log('[GoPro] Querying AP SSID...');
+      ssid = await sendQuery(COMMANDS.GET_AP_SSID, 'SSID');
+      if (ssid) {
+        console.log('[GoPro] AP SSID:', ssid);
+      }
+
+      // Query Password
+      console.log('[GoPro] Querying AP Password...');
+      password = await sendQuery(COMMANDS.GET_AP_PASSWORD, 'Password');
+      if (password) {
+        console.log('[GoPro] AP Password:', password);
+      }
+
+      // Query AP State
+      console.log('[GoPro] Querying AP State...');
+      const stateStr = await sendQuery(COMMANDS.GET_AP_STATE, 'AP State');
+      if (stateStr && stateStr.length > 0) {
+        enabled = stateStr.charCodeAt(0) === 1;
+        console.log('[GoPro] AP Enabled:', enabled);
+      }
+
+      const info: WiFiAPInfo = { ssid, password, enabled };
+      console.log('[GoPro] WiFi AP Info:', info);
+
+      return info;
+    } catch (error) {
+      console.error('[GoPro] Failed to query WiFi AP info:', error);
+      // Return empty info instead of throwing - this is not a fatal error
+      return { ssid: '', password: '', enabled: false };
     }
   }
 
