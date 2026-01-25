@@ -13,6 +13,7 @@ import { useSessionStore } from '@stores/sessionStore';
 import { useMusicStore } from '@stores/musicStore';
 import { useDeviceStore } from '@stores/deviceStore';
 import { useEventStore } from '@stores/eventStore';
+import telegramDeliveryService from '@services/TelegramDeliveryService';
 
 type HomeScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -119,7 +120,44 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const isPreparing = state.status === 'preparing';
   const isDownloading = state.status === 'downloading';
   const isWaitingForWifi = state.status === 'waiting_for_wifi';
+  const isUploadingToLaptop = state.status === 'uploading_to_laptop';
+  const isProcessingOnLaptop = state.status === 'processing_on_laptop';
+  const isDownloadingFromLaptop = state.status === 'downloading_from_laptop';
+  const isReadyForDelivery = state.status === 'ready_for_delivery';
+  const isLaptopProcessing = isUploadingToLaptop || isProcessingOnLaptop || isDownloadingFromLaptop;
   const canStart = state.status === 'idle' && devices.gopro.connected && devices.booth.connected;
+
+  const handleShareToTelegram = async () => {
+    if (!state.processedVideoPath) {
+      Alert.alert('Error', 'No processed video available');
+      return;
+    }
+
+    try {
+      // First try native share sheet
+      const shared = await telegramDeliveryService.shareVideoToTelegram(
+        state.processedVideoPath,
+        config.customerName
+      );
+
+      if (!shared) {
+        // If user dismissed share, try opening Telegram directly
+        try {
+          await telegramDeliveryService.openTelegramChat(config.customerPhone);
+        } catch {
+          // Telegram might not be installed, show file location
+          await telegramDeliveryService.showVideoPath(state.processedVideoPath);
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('Error', `Failed to share: ${error.message}`);
+    }
+  };
+
+  const handleNewSession = () => {
+    // Reset session state for new customer
+    useSessionStore.getState().resetSession();
+  };
 
   return (
     <View style={styles.container}>
@@ -187,6 +225,53 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             <Text style={styles.wifiWaitNote}>
               App will auto-detect when WiFi is available...
             </Text>
+          </View>
+        )}
+
+        {/* Laptop Processing Status */}
+        {isLaptopProcessing && (
+          <View style={styles.laptopProcessingContainer}>
+            <Text style={styles.laptopProcessingTitle}>
+              {isUploadingToLaptop && '📤 Uploading to Laptop'}
+              {isProcessingOnLaptop && '🎬 Processing Video'}
+              {isDownloadingFromLaptop && '📥 Downloading Result'}
+            </Text>
+            <Text style={styles.laptopStatusText}>
+              {state.downloadStatus || 'Processing...'}
+            </Text>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFillLaptop,
+                  { width: `${state.laptopProgress || 0}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.laptopProgressText}>
+              {state.laptopProgress || 0}%
+            </Text>
+          </View>
+        )}
+
+        {/* Ready for Delivery */}
+        {isReadyForDelivery && (
+          <View style={styles.deliveryContainer}>
+            <Text style={styles.deliveryTitle}>✅ Video Ready!</Text>
+            <Text style={styles.deliveryText}>
+              Video for {config.customerName} is ready
+            </Text>
+            <TouchableOpacity
+              style={styles.telegramButton}
+              onPress={handleShareToTelegram}
+            >
+              <Text style={styles.telegramButtonText}>📱 Share via Telegram</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.newSessionButton}
+              onPress={handleNewSession}
+            >
+              <Text style={styles.newSessionButtonText}>Start New Session</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -593,5 +678,87 @@ const styles = StyleSheet.create({
   deviceStatusText: {
     color: '#999',
     fontSize: 14,
+  },
+  // Laptop Processing Styles
+  laptopProcessingContainer: {
+    marginTop: 15,
+    width: '100%',
+    backgroundColor: '#1a2a1a',
+    borderRadius: 8,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#4caf50',
+  },
+  laptopProcessingTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4caf50',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  laptopStatusText: {
+    fontSize: 14,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  progressFillLaptop: {
+    height: '100%',
+    backgroundColor: '#4caf50',
+  },
+  laptopProgressText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  // Delivery Styles
+  deliveryContainer: {
+    marginTop: 15,
+    width: '100%',
+    backgroundColor: '#1a2a1a',
+    borderRadius: 8,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#4caf50',
+    alignItems: 'center',
+  },
+  deliveryTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4caf50',
+    marginBottom: 10,
+  },
+  deliveryText: {
+    fontSize: 16,
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  telegramButton: {
+    backgroundColor: '#0088cc',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    marginBottom: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  telegramButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  newSessionButton: {
+    backgroundColor: '#333',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    width: '100%',
+    alignItems: 'center',
+  },
+  newSessionButtonText: {
+    color: '#999',
+    fontSize: 16,
   },
 });

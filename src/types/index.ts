@@ -28,13 +28,17 @@ export interface MusicTrack {
 }
 
 export interface SessionState {
-  status: 'idle' | 'preparing' | 'recording' | 'stopping' | 'processing' | 'error' | 'downloading' | 'waiting_for_wifi';
+  status: 'idle' | 'preparing' | 'recording' | 'stopping' | 'processing' | 'error' | 'downloading' | 'waiting_for_wifi' | 'uploading_to_laptop' | 'processing_on_laptop' | 'downloading_from_laptop' | 'ready_for_delivery';
   startTime: number | null;
   elapsedTime: number;
   error: string | null;
   // Download progress tracking
   downloadStatus?: string; // Current download step description
   downloadProgress?: number; // 0-100 for download progress
+  // Laptop processing tracking
+  laptopJobId?: string; // Job ID from laptop server
+  laptopProgress?: number; // 0-100 for processing progress
+  processedVideoPath?: string; // Local path to downloaded processed video
 }
 
 export interface DeviceConnectionState {
@@ -143,4 +147,54 @@ export interface VideoProcessingJob {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number; // 0-100
   error: string | null;
+}
+
+// Laptop Server API Types
+export interface LaptopServerConfig {
+  baseUrl: string; // e.g., 'http://192.168.1.200:3001'
+  template: 'corporate' | 'party';
+}
+
+export interface LaptopUploadResponse {
+  success: boolean;
+  jobId: string;
+  message: string;
+}
+
+export interface LaptopStatusResponse {
+  jobId: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: number; // 0-100
+  inputFilename: string;
+  outputFilename?: string;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface LaptopHealthResponse {
+  online: boolean;
+  queueLength: number;
+  processingCount: number;
+  maxConcurrent: number;
+  ffmpegVersion: string;
+  uptime: number;
+}
+
+export interface ILaptopTransferService {
+  checkHealth(): Promise<LaptopHealthResponse>;
+  uploadVideo(
+    videoPath: string,
+    eventName: string,
+    customerName: string,
+    customerPhone: string,
+    template: string,
+    onProgress?: (progress: number) => void
+  ): Promise<string>; // Returns jobId
+  checkStatus(jobId: string): Promise<LaptopStatusResponse>;
+  downloadProcessedVideo(
+    jobId: string,
+    onProgress?: (progress: number) => void
+  ): Promise<string>; // Returns local file path
 }

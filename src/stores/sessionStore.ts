@@ -13,6 +13,7 @@ interface SessionStore {
   stopSession: () => Promise<void>;
   emergencyStop: () => Promise<void>;
   resetConfig: () => void;
+  resetSession: () => void; // Reset customer info and state for new session
 }
 
 const DEFAULT_CONFIG: SessionConfig = {
@@ -79,6 +80,28 @@ export const useSessionStore = create<SessionStore>((set, get) => {
 
     resetConfig: () => {
       set({ config: DEFAULT_CONFIG });
+    },
+
+    resetSession: () => {
+      // Reset customer info but keep session settings (duration, speed, etc.)
+      set((currentState) => ({
+        config: {
+          ...currentState.config,
+          customerName: '',
+          customerPhone: '',
+        },
+        state: {
+          status: 'idle',
+          startTime: null,
+          elapsedTime: 0,
+          error: null,
+          downloadStatus: undefined,
+          downloadProgress: undefined,
+          laptopJobId: undefined,
+          laptopProgress: undefined,
+          processedVideoPath: undefined,
+        },
+      }));
     },
   };
 });

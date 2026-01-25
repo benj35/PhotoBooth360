@@ -4,6 +4,7 @@ import boothService from './BoothService';
 import audioService from './AudioService';
 import wifiManager from './WiFiManagerService';
 import goProWiFiService from './GoProWiFiService';
+import laptopTransferService from './LaptopTransferService';
 
 /**
  * Session Orchestrator - Coordinates all devices for automated recording sessions
@@ -20,6 +21,7 @@ export class SessionOrchestrator implements ISessionOrchestrator {
   private stateChangeCallbacks: Array<(state: SessionState) => void> = [];
   private sessionTimer: ReturnType<typeof setTimeout> | null = null;
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+  private currentConfig: SessionConfig | null = null; // Store config for laptop processing
 
   /**
    * Start a new recording session
@@ -27,6 +29,9 @@ export class SessionOrchestrator implements ISessionOrchestrator {
    */
   async startSession(config: SessionConfig): Promise<void> {
     console.log('[SessionOrchestrator] Starting session with config:', config);
+
+    // Store config for use in stopSession (for laptop processing)
+    this.currentConfig = config;
 
     try {
       // Update state to preparing
@@ -106,6 +111,7 @@ export class SessionOrchestrator implements ISessionOrchestrator {
   /**
    * Stop the current recording session
    * IMPORTANT: This now includes automatic WiFi switching for video download
+   * Uses stored currentConfig from startSession for laptop processing
    */
   async stopSession(): Promise<void> {
     console.log('[SessionOrchestrator] Stopping session');
@@ -318,11 +324,70 @@ export class SessionOrchestrator implements ISessionOrchestrator {
                     const switchBackSuccess = await wifiManager.switchToBoothWiFi();
                     if (switchBackSuccess) {
                       console.log('[SessionOrchestrator] ✅ Back on booth WiFi');
+
+                      // Wait for WiFi connection to stabilize and verify we can reach the laptop
+                      // Note: SSID check is unreliable because GoPro sometimes spoofs SSID names
+                      // Instead, we verify by actually reaching the laptop server
+                      this.updateState({
+                        ...this.sessionState,
+                        downloadStatus: 'Verifying network connection...',
+                        downloadProgress: 97,
+                      });
+
+                      // Wait up to 30 seconds for laptop to be reachable
+                      let canReachLaptop = false;
+                      for (let attempt = 1; attempt <= 10; attempt++) {
+                        console.log(`[SessionOrchestrator] Verifying laptop reachable (attempt ${attempt}/10)...`);
+
+                        // First wait for network to stabilize
+                        await this.delay(3000);
+
+                        // Log current SSID for debugging
+                        try {
+                          const currentSSID = await wifiManager.getCurrentSSID();
+                          console.log(`[SessionOrchestrator] Current SSID: ${currentSSID}`);
+                        } catch (e) {
+                          console.log('[SessionOrchestrator] Could not get current SSID');
+                        }
+
+                        // Try to reach the laptop server
+                        try {
+                          const health = await laptopTransferService.checkHealth();
+                          console.log('[SessionOrchestrator] ✅ Laptop server reachable:', health);
+                          canReachLaptop = true;
+                          break;
+                        } catch (healthError) {
+                          console.log(`[SessionOrchestrator] Laptop not reachable yet: ${healthError}`);
+                        }
+
+                        this.updateState({
+                          ...this.sessionState,
+                          downloadStatus: `Waiting for booth network... (${attempt}/10)`,
+                          downloadProgress: 97 + attempt * 0.3,
+                        });
+                      }
+
+                      if (!canReachLaptop) {
+                        console.error('[SessionOrchestrator] ❌ Could not reach laptop after switching WiFi');
+                        this.updateState({
+                          ...this.sessionState,
+                          downloadStatus: 'Download complete (laptop not reachable)',
+                          downloadProgress: 100,
+                        });
+                        return; // Skip laptop processing
+                      }
+
                       this.updateState({
                         ...this.sessionState,
                         downloadStatus: 'Download complete!',
                         downloadProgress: 100,
                       });
+
+                      // Step 6: Start laptop processing workflow
+                      if (this.currentConfig) {
+                        await this.processVideoOnLaptop(downloadedPath, this.currentConfig);
+                      }
+
                     } else {
                       console.error('[SessionOrchestrator] ❌ Failed to switch back to booth WiFi');
                       this.updateState({
@@ -382,6 +447,8 @@ export class SessionOrchestrator implements ISessionOrchestrator {
       }
 
       // Update state to idle (UI will show download button)
+      // Clear stored config
+      this.currentConfig = null;
       this.updateState({
         status: 'idle',
         startTime: null,
@@ -489,7 +556,8 @@ export class SessionOrchestrator implements ISessionOrchestrator {
       this.elapsedTimer = null;
     }
 
-    // Update state to error
+    // Clear stored config and update state to error
+    this.currentConfig = null;
     this.updateState({
       status: 'error',
       error: error.message || 'Unknown error occurred',
@@ -498,6 +566,145 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Process video on laptop server
+   * Uploads raw video, polls for completion, downloads processed video
+   */
+  private async processVideoOnLaptop(
+    videoPath: string,
+    config: SessionConfig,
+  ): Promise<void> {
+    console.log('[SessionOrchestrator] Starting laptop processing workflow');
+
+    try {
+      // Check if laptop server is available (with retries for network stability)
+      this.updateState({
+        ...this.sessionState,
+        status: 'uploading_to_laptop',
+        downloadStatus: 'Checking laptop server...',
+        laptopProgress: 0,
+      });
+
+      // Retry health check up to 3 times with delays
+      let healthCheckSuccess = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`[SessionOrchestrator] Health check attempt ${attempt}/3...`);
+          const health = await laptopTransferService.checkHealth();
+          console.log('[SessionOrchestrator] ✅ Laptop server is online:', health);
+          healthCheckSuccess = true;
+          break;
+        } catch (healthError) {
+          console.warn(`[SessionOrchestrator] Health check attempt ${attempt} failed:`, healthError);
+          if (attempt < 3) {
+            this.updateState({
+              ...this.sessionState,
+              downloadStatus: `Retrying server connection (${attempt}/3)...`,
+            });
+            await this.delay(2000); // Wait 2 seconds before retry
+          }
+        }
+      }
+
+      if (!healthCheckSuccess) {
+        console.error('[SessionOrchestrator] ❌ Laptop server not reachable after 3 attempts');
+        this.updateState({
+          ...this.sessionState,
+          status: 'ready_for_delivery',
+          downloadStatus: 'Laptop server not available - manual editing required',
+        });
+        return;
+      }
+
+      // Step 1: Upload video to laptop
+      this.updateState({
+        ...this.sessionState,
+        status: 'uploading_to_laptop',
+        downloadStatus: 'Uploading video to laptop...',
+        laptopProgress: 0,
+      });
+
+      const jobId = await laptopTransferService.uploadVideo(
+        videoPath,
+        config.eventName || 'Event',
+        config.customerName || 'Customer',
+        config.customerPhone || '',
+        'party', // Default template - can be made configurable later
+        (progress) => {
+          this.updateState({
+            ...this.sessionState,
+            downloadStatus: `Uploading to laptop... ${progress}%`,
+            laptopProgress: progress,
+          });
+        },
+      );
+
+      console.log('[SessionOrchestrator] ✅ Video uploaded, jobId:', jobId);
+
+      // Step 2: Poll for processing completion
+      this.updateState({
+        ...this.sessionState,
+        status: 'processing_on_laptop',
+        downloadStatus: 'Processing video on laptop...',
+        laptopJobId: jobId,
+        laptopProgress: 0,
+      });
+
+      await laptopTransferService.pollUntilComplete(
+        jobId,
+        (status) => {
+          this.updateState({
+            ...this.sessionState,
+            downloadStatus: `Processing on laptop... ${status.progress}%`,
+            laptopProgress: status.progress,
+          });
+        },
+        3000, // Poll every 3 seconds
+        600000, // 10 minute timeout
+      );
+
+      console.log('[SessionOrchestrator] ✅ Processing complete');
+
+      // Step 3: Download processed video
+      this.updateState({
+        ...this.sessionState,
+        status: 'downloading_from_laptop',
+        downloadStatus: 'Downloading processed video...',
+        laptopProgress: 0,
+      });
+
+      const processedVideoPath = await laptopTransferService.downloadProcessedVideo(
+        jobId,
+        (progress) => {
+          this.updateState({
+            ...this.sessionState,
+            downloadStatus: `Downloading from laptop... ${progress}%`,
+            laptopProgress: progress,
+          });
+        },
+      );
+
+      console.log('[SessionOrchestrator] ✅ Processed video downloaded:', processedVideoPath);
+
+      // Step 4: Ready for delivery
+      this.updateState({
+        ...this.sessionState,
+        status: 'ready_for_delivery',
+        downloadStatus: 'Video ready for delivery!',
+        laptopProgress: 100,
+        processedVideoPath,
+      });
+
+    } catch (error) {
+      console.error('[SessionOrchestrator] ❌ Laptop processing failed:', error);
+      this.updateState({
+        ...this.sessionState,
+        status: 'error',
+        error: `Laptop processing failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   /**
@@ -526,6 +733,8 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
     await Promise.allSettled(stopPromises);
 
+    // Clear stored config
+    this.currentConfig = null;
     this.updateState({
       status: 'idle',
       startTime: null,

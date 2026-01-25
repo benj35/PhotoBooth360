@@ -1,0 +1,12 @@
+{
+  "id": "corporate",
+  "name": "Corporate Professional",
+  "description": "Clean professional look with subtle branding - ideal for corporate events, conferences, and business gatherings",
+  "overlay": "overlays/corporate-frame.png",
+  "music": "music/corporate-subtle.mp3",
+  "musicVolume": 0.2,
+  "textPosition": "bottom",
+  "textColor": "#FFFFFF",
+  "textSize": 36,
+  "outputQuality": 23
+}

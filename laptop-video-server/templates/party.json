@@ -1,0 +1,12 @@
+{
+  "id": "party",
+  "name": "Party & Celebration",
+  "description": "Fun and colorful look with upbeat music - perfect for birthdays, weddings, and celebrations",
+  "overlay": "overlays/party-frame.png",
+  "music": "music/party-upbeat.mp3",
+  "musicVolume": 0.35,
+  "textPosition": "bottom",
+  "textColor": "#FFD700",
+  "textSize": 40,
+  "outputQuality": 23
+}

@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useDeviceStore } from '@stores/deviceStore';
 import wifiManager from '@services/WiFiManagerService';
+import laptopTransferService from '@services/LaptopTransferService';
 
 type ConnectionScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Connection'>;
@@ -33,6 +34,12 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
   // Note: SSID is "HERO13 Black" (not the serial number "GP50113778")
   const [goProSSID, setGoProSSID] = useState('HERO13 Black');
   const [goProPassword, setGoProPassword] = useState('R2Q-P>T-fpy');
+
+  // Laptop server configuration
+  const [laptopUrl, setLaptopUrl] = useState(laptopTransferService.getBaseUrl());
+  const [laptopConnected, setLaptopConnected] = useState(false);
+  const [laptopConnecting, setLaptopConnecting] = useState(false);
+  const [laptopInfo, setLaptopInfo] = useState<string | null>(null);
 
   const { devices, connecting, connectGoPro, connectBooth } = useDeviceStore();
 
@@ -191,6 +198,35 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
     setShowWiFiModal(false);
   };
 
+  const handleConnectLaptop = async () => {
+    if (!laptopUrl.trim()) {
+      Alert.alert('Error', 'Please enter laptop server URL');
+      return;
+    }
+
+    setLaptopConnecting(true);
+    setLaptopInfo(null);
+
+    try {
+      // Update the service URL
+      laptopTransferService.setBaseUrl(laptopUrl.trim());
+
+      // Test connection
+      const health = await laptopTransferService.checkHealth();
+
+      setLaptopConnected(true);
+      setLaptopInfo(`Queue: ${health.queueLength} | Processing: ${health.processingCount}/${health.maxConcurrent}`);
+
+      Alert.alert('Success', `Laptop server connected!\nFFmpeg: ${health.ffmpegVersion}`);
+    } catch (error: any) {
+      setLaptopConnected(false);
+      setLaptopInfo(null);
+      Alert.alert('Error', `Failed to connect to laptop server: ${error.message}`);
+    } finally {
+      setLaptopConnecting(false);
+    }
+  };
+
   const handleContinue = () => {
     // Allow continuing if booth is connected (skip GoPro check for testing)
     if (!devices.booth.connected) {
@@ -305,6 +341,59 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
             </TouchableOpacity>
           </>
         )}
+      </View>
+
+      {/* Laptop Server Connection */}
+      <View style={styles.deviceCard}>
+        <View style={styles.deviceHeader}>
+          <Text style={styles.deviceName}>Laptop Server</Text>
+          <View
+            style={[
+              styles.statusDot,
+              laptopConnected ? styles.statusConnected : styles.statusDisconnected,
+            ]}
+          />
+        </View>
+
+        {laptopConnected ? (
+          <View style={styles.deviceInfo}>
+            <Text style={styles.deviceInfoText}>Status: Online</Text>
+            {laptopInfo && <Text style={styles.deviceInfoText}>{laptopInfo}</Text>}
+            <TouchableOpacity
+              style={styles.reconnectButton}
+              onPress={handleConnectLaptop}
+            >
+              <Text style={styles.reconnectText}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              value={laptopUrl}
+              onChangeText={setLaptopUrl}
+              placeholder="http://192.168.1.200:3001"
+              placeholderTextColor="#666"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={styles.connectButton}
+              onPress={handleConnectLaptop}
+              disabled={laptopConnecting}
+            >
+              {laptopConnecting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Test Connection</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+
+        <Text style={styles.laptopHint}>
+          Video processing server for overlays & music
+        </Text>
       </View>
 
       {/* Continue Button */}
@@ -580,5 +669,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Laptop Server Styles
+  reconnectButton: {
+    marginTop: 8,
+    padding: 8,
+    alignItems: 'center',
+  },
+  reconnectText: {
+    color: '#2196f3',
+    fontSize: 14,
+  },
+  laptopHint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
