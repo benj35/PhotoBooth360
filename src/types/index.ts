@@ -3,6 +3,7 @@
 export interface SessionConfig {
   duration: number; // in seconds
   musicTrackId: string | null;
+  musicFilename: string | null; // Server-side music filename for processing
   rotationSpeed: number; // 0-100
   videoMode: VideoMode;
   resolution: VideoResolution;
@@ -21,24 +22,19 @@ export type VideoResolution = '1080p' | '4k' | '5.3k';
 export interface MusicTrack {
   id: string;
   title: string;
-  artist: string;
-  duration: number; // in seconds
-  uri: string; // local file path or URL
-  thumbnailUri?: string;
+  filename: string; // Server-side filename (e.g., 'party-vibes.mp3')
 }
 
 export interface SessionState {
-  status: 'idle' | 'preparing' | 'recording' | 'stopping' | 'processing' | 'error' | 'downloading' | 'waiting_for_wifi' | 'uploading_to_laptop' | 'processing_on_laptop' | 'downloading_from_laptop' | 'ready_for_delivery';
+  status: 'idle' | 'preparing' | 'recording' | 'stopping' | 'processing' | 'error' | 'downloading' | 'waiting_for_wifi' | 'uploading_to_laptop';
   startTime: number | null;
   elapsedTime: number;
   error: string | null;
   // Download progress tracking
   downloadStatus?: string; // Current download step description
   downloadProgress?: number; // 0-100 for download progress
-  // Laptop processing tracking
-  laptopJobId?: string; // Job ID from laptop server
-  laptopProgress?: number; // 0-100 for processing progress
-  processedVideoPath?: string; // Local path to downloaded processed video
+  // Laptop upload tracking
+  laptopProgress?: number; // 0-100 for upload progress
 }
 
 export interface DeviceConnectionState {
@@ -101,14 +97,6 @@ export interface IBoothService {
   getStatus(): Promise<BoothStatus>;
 }
 
-export interface IAudioService {
-  loadTrack(uri: string): Promise<void>;
-  play(): Promise<void>;
-  pause(): Promise<void>;
-  stop(): Promise<void>;
-  getDuration(): number;
-  getCurrentTime(): number;
-}
 
 export interface ISessionOrchestrator {
   startSession(config: SessionConfig): Promise<void>;
@@ -161,18 +149,6 @@ export interface LaptopUploadResponse {
   message: string;
 }
 
-export interface LaptopStatusResponse {
-  jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
-  progress: number; // 0-100
-  inputFilename: string;
-  outputFilename?: string;
-  error?: string;
-  createdAt: string;
-  startedAt?: string;
-  completedAt?: string;
-}
-
 export interface LaptopHealthResponse {
   online: boolean;
   queueLength: number;
@@ -184,17 +160,14 @@ export interface LaptopHealthResponse {
 
 export interface ILaptopTransferService {
   checkHealth(): Promise<LaptopHealthResponse>;
+  fetchMusicTracks(): Promise<{filename: string; name: string}[]>;
   uploadVideo(
     videoPath: string,
     eventName: string,
     customerName: string,
     customerPhone: string,
     template: string,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    musicFile?: string
   ): Promise<string>; // Returns jobId
-  checkStatus(jobId: string): Promise<LaptopStatusResponse>;
-  downloadProcessedVideo(
-    jobId: string,
-    onProgress?: (progress: number) => void
-  ): Promise<string>; // Returns local file path
 }

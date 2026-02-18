@@ -28,6 +28,7 @@ export interface VideoMetadata {
   customerName: string;
   customerPhone: string;
   template: string; // 'corporate' | 'party' | etc.
+  musicFile?: string; // Optional: specific music file from assets/music/
 }
 
 export interface UploadResponse {
@@ -61,8 +62,7 @@ export interface TemplateConfig {
   id: string;
   name: string;
   description: string;
-  overlay: string;        // Path to overlay image
-  music: string;          // Path to background music
+  music: string;          // Default music file path in assets/
   musicVolume: number;    // 0.0 - 1.0
   textPosition: 'top' | 'bottom' | 'center';
   textColor: string;      // Hex color

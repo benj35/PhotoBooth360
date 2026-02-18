@@ -66,7 +66,7 @@ router.post('/', upload.single('file'), (req: Request, res: Response) => {
     }
 
     // Validate required metadata fields
-    const { eventName, customerName, customerPhone, template } = req.body;
+    const { eventName, customerName, customerPhone, template, musicFile } = req.body;
 
     if (!eventName || !customerName || !customerPhone || !template) {
       const response: UploadResponse = {
@@ -83,6 +83,7 @@ router.post('/', upload.single('file'), (req: Request, res: Response) => {
       customerName,
       customerPhone,
       template,
+      musicFile: musicFile || undefined,
     };
 
     // Add job to queue

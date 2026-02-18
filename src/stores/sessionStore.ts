@@ -19,6 +19,7 @@ interface SessionStore {
 const DEFAULT_CONFIG: SessionConfig = {
   duration: 20, // 20 seconds default
   musicTrackId: null,
+  musicFilename: null,
   rotationSpeed: 50, // 50% speed
   videoMode: 'standard',
   resolution: '4k',
@@ -56,6 +57,14 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         await sessionOrchestrator.startSession(config);
       } catch (error) {
         console.error('[SessionStore] Failed to start session:', error);
+        set({
+          state: {
+            status: 'error',
+            startTime: null,
+            elapsedTime: 0,
+            error: error instanceof Error ? error.message : 'Failed to start session',
+          },
+        });
         throw error;
       }
     },
@@ -65,6 +74,14 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         await sessionOrchestrator.stopSession();
       } catch (error) {
         console.error('[SessionStore] Failed to stop session:', error);
+        set({
+          state: {
+            status: 'error',
+            startTime: null,
+            elapsedTime: 0,
+            error: error instanceof Error ? error.message : 'Failed to stop session',
+          },
+        });
         throw error;
       }
     },
@@ -74,7 +91,15 @@ export const useSessionStore = create<SessionStore>((set, get) => {
         await sessionOrchestrator.emergencyStop();
       } catch (error) {
         console.error('[SessionStore] Emergency stop failed:', error);
-        throw error;
+        // Force reset to idle regardless of error
+        set({
+          state: {
+            status: 'idle',
+            startTime: null,
+            elapsedTime: 0,
+            error: 'Emergency stop encountered an error',
+          },
+        });
       }
     },
 
@@ -97,9 +122,7 @@ export const useSessionStore = create<SessionStore>((set, get) => {
           error: null,
           downloadStatus: undefined,
           downloadProgress: undefined,
-          laptopJobId: undefined,
           laptopProgress: undefined,
-          processedVideoPath: undefined,
         },
       }));
     },

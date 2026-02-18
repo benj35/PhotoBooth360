@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -25,6 +26,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
+      <ErrorBoundary>
       <NavigationContainer>
         <Stack.Navigator
           initialRouteName="Connection"
@@ -36,6 +38,7 @@ function App(): React.JSX.Element {
             headerTitleStyle: {
               fontWeight: 'bold',
             },
+            headerBackTitle: '',
           }}
         >
           <Stack.Screen
@@ -70,6 +73,7 @@ function App(): React.JSX.Element {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

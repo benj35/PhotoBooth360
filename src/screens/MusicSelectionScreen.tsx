@@ -23,24 +23,18 @@ export default function MusicSelectionScreen({ navigation }: MusicSelectionScree
   const { updateConfig } = useSessionStore();
 
   useEffect(() => {
-    if (availableTracks.length === 0 && !loading) {
-      loadTracks();
-    }
+    loadTracks();
   }, []);
 
-  const handleSelectTrack = async (track: MusicTrack) => {
-    try {
-      await selectTrack(track);
-      updateConfig({ musicTrackId: track.id });
-      navigation.goBack();
-    } catch (error: any) {
-      console.error('Failed to select track:', error);
-    }
+  const handleSelectTrack = (track: MusicTrack) => {
+    selectTrack(track);
+    updateConfig({ musicTrackId: track.id, musicFilename: track.filename });
+    navigation.goBack();
   };
 
   const handleClearSelection = () => {
     clearSelection();
-    updateConfig({ musicTrackId: null });
+    updateConfig({ musicTrackId: null, musicFilename: null });
     navigation.goBack();
   };
 
@@ -54,8 +48,7 @@ export default function MusicSelectionScreen({ navigation }: MusicSelectionScree
       >
         <View style={styles.trackInfo}>
           <Text style={styles.trackTitle}>{item.title}</Text>
-          <Text style={styles.trackArtist}>{item.artist}</Text>
-          <Text style={styles.trackDuration}>{item.duration}s</Text>
+          <Text style={styles.trackFilename}>{item.filename}</Text>
         </View>
         {isSelected && (
           <View style={styles.selectedBadge}>
@@ -70,7 +63,7 @@ export default function MusicSelectionScreen({ navigation }: MusicSelectionScree
     return (
       <View style={[styles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color="#2196f3" />
-        <Text style={styles.loadingText}>Loading music library...</Text>
+        <Text style={styles.loadingText}>Loading music from server...</Text>
       </View>
     );
   }
@@ -80,7 +73,7 @@ export default function MusicSelectionScreen({ navigation }: MusicSelectionScree
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Choose Background Music</Text>
         <Text style={styles.headerSubtitle}>
-          Select a track to play during the session
+          Select a track for the edited video
         </Text>
       </View>
 
@@ -93,8 +86,11 @@ export default function MusicSelectionScreen({ navigation }: MusicSelectionScree
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No music tracks available</Text>
             <Text style={styles.emptySubtext}>
-              Add music files to your device to see them here
+              Connect to the laptop server to load music tracks
             </Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadTracks}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         }
       />
@@ -163,12 +159,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 4,
   },
-  trackArtist: {
-    fontSize: 14,
-    color: '#999',
-    marginBottom: 4,
-  },
-  trackDuration: {
+  trackFilename: {
     fontSize: 12,
     color: '#666',
   },
@@ -198,6 +189,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#2196f3',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   clearButton: {
     backgroundColor: '#333',

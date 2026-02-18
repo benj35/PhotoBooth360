@@ -8,6 +8,8 @@ import {
   ScrollView,
   Alert,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -58,8 +60,8 @@ export default function CustomerInputScreen({ navigation }: CustomerInputScreenP
 
     console.log('[CustomerInput] Starting session for:', customerName);
 
-    // Navigate to Home screen to start the session
-    navigation.navigate('Home');
+    // Navigate to Home screen (reset stack so back doesn't go to customer input)
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   const handleCreateEvent = () => {
@@ -80,7 +82,12 @@ export default function CustomerInputScreen({ navigation }: CustomerInputScreenP
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView
+      style={{flex: 1}}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.content}>
         <Text style={styles.title}>Session Setup</Text>
         <Text style={styles.subtitle}>Enter customer information before starting</Text>
@@ -230,6 +237,7 @@ export default function CustomerInputScreen({ navigation }: CustomerInputScreenP
         </View>
       </Modal>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

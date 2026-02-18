@@ -1,7 +1,6 @@
 import { ISessionOrchestrator, SessionConfig, SessionState } from '../types';
 import goProService from './GoProService';
 import boothService from './BoothService';
-import audioService from './AudioService';
 import wifiManager from './WiFiManagerService';
 import goProWiFiService from './GoProWiFiService';
 import laptopTransferService from './LaptopTransferService';
@@ -51,19 +50,12 @@ export class SessionOrchestrator implements ISessionOrchestrator {
         throw new Error('Booth is not connected');
       }
 
-      // Step 1: Load music if selected
-      if (config.musicTrackId) {
-        console.log('[SessionOrchestrator] Loading music track');
-        // In real implementation, we'd get the track URI from music store
-        // For now, we'll skip if no URI provided
-      }
-
-      // Step 2: Set GoPro video mode and resolution
+      // Step 1: Set GoPro video mode and resolution
       console.log('[SessionOrchestrator] Configuring GoPro settings');
       await goProService.setVideoMode(config.videoMode);
       await goProService.setResolution(config.resolution);
 
-      // Step 2.5: Apply LED preset
+      // Step 2: Apply LED preset
       console.log('[SessionOrchestrator] Applying LED preset:', config.ledPreset);
       await boothService.applyLEDPreset(config.ledPreset);
 
@@ -90,11 +82,6 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
       await goProService.startRecording();
       await this.delay(200);
-
-      // Start music if loaded
-      if (config.musicTrackId && audioService.isTrackLoaded()) {
-        await audioService.play();
-      }
 
       console.log('[SessionOrchestrator] All devices started successfully');
 
@@ -135,9 +122,6 @@ export class SessionOrchestrator implements ISessionOrchestrator {
       }
 
       // Stop all devices (in reverse order)
-      await audioService.stop();
-      await this.delay(100);
-
       await goProService.stopRecording();
       await this.delay(100);
 
@@ -295,7 +279,7 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
                   console.log('[SessionOrchestrator] Downloading to:', destPath);
 
-                  // Download with progress
+                  // Download with progress (pass directory from media list)
                   const downloadedPath = await goProWiFiService.downloadVideo(
                     latestVideo.filename,
                     destPath,
@@ -308,7 +292,8 @@ export class SessionOrchestrator implements ISessionOrchestrator {
                         downloadStatus: `Downloading... ${progress}%`,
                         downloadProgress: totalProgress,
                       });
-                    }
+                    },
+                    latestVideo.directory,
                   );
 
                   console.log('[SessionOrchestrator] ✅ Video downloaded:', downloadedPath);
@@ -507,8 +492,13 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
   private scheduleSessionStop(duration: number): void {
     this.sessionTimer = setTimeout(async () => {
-      console.log('[SessionOrchestrator] Auto-stopping session after duration');
-      await this.stopSession();
+      try {
+        console.log('[SessionOrchestrator] Auto-stopping session after duration');
+        await this.stopSession();
+      } catch (error) {
+        console.error('[SessionOrchestrator] Auto-stop failed:', error);
+        await this.handleSessionError(error);
+      }
     }, duration);
   }
 
@@ -527,12 +517,6 @@ export class SessionOrchestrator implements ISessionOrchestrator {
     console.error('[SessionOrchestrator] Handling session error:', error);
 
     // Try to stop all devices gracefully
-    try {
-      await audioService.stop();
-    } catch (e) {
-      console.error('[SessionOrchestrator] Error stopping audio:', e);
-    }
-
     try {
       await goProService.stopRecording();
     } catch (e) {
@@ -569,56 +553,16 @@ export class SessionOrchestrator implements ISessionOrchestrator {
   }
 
   /**
-   * Process video on laptop server
-   * Uploads raw video, polls for completion, downloads processed video
+   * Upload video to laptop server (fire-and-forget)
+   * Just uploads the video then returns to idle - no polling or downloading
    */
   private async processVideoOnLaptop(
     videoPath: string,
     config: SessionConfig,
   ): Promise<void> {
-    console.log('[SessionOrchestrator] Starting laptop processing workflow');
+    console.log('[SessionOrchestrator] Starting laptop upload (fire-and-forget)');
 
     try {
-      // Check if laptop server is available (with retries for network stability)
-      this.updateState({
-        ...this.sessionState,
-        status: 'uploading_to_laptop',
-        downloadStatus: 'Checking laptop server...',
-        laptopProgress: 0,
-      });
-
-      // Retry health check up to 3 times with delays
-      let healthCheckSuccess = false;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          console.log(`[SessionOrchestrator] Health check attempt ${attempt}/3...`);
-          const health = await laptopTransferService.checkHealth();
-          console.log('[SessionOrchestrator] ✅ Laptop server is online:', health);
-          healthCheckSuccess = true;
-          break;
-        } catch (healthError) {
-          console.warn(`[SessionOrchestrator] Health check attempt ${attempt} failed:`, healthError);
-          if (attempt < 3) {
-            this.updateState({
-              ...this.sessionState,
-              downloadStatus: `Retrying server connection (${attempt}/3)...`,
-            });
-            await this.delay(2000); // Wait 2 seconds before retry
-          }
-        }
-      }
-
-      if (!healthCheckSuccess) {
-        console.error('[SessionOrchestrator] ❌ Laptop server not reachable after 3 attempts');
-        this.updateState({
-          ...this.sessionState,
-          status: 'ready_for_delivery',
-          downloadStatus: 'Laptop server not available - manual editing required',
-        });
-        return;
-      }
-
-      // Step 1: Upload video to laptop
       this.updateState({
         ...this.sessionState,
         status: 'uploading_to_laptop',
@@ -626,12 +570,12 @@ export class SessionOrchestrator implements ISessionOrchestrator {
         laptopProgress: 0,
       });
 
-      const jobId = await laptopTransferService.uploadVideo(
+      await laptopTransferService.uploadVideo(
         videoPath,
         config.eventName || 'Event',
         config.customerName || 'Customer',
         config.customerPhone || '',
-        'party', // Default template - can be made configurable later
+        'party',
         (progress) => {
           this.updateState({
             ...this.sessionState,
@@ -639,71 +583,14 @@ export class SessionOrchestrator implements ISessionOrchestrator {
             laptopProgress: progress,
           });
         },
+        config.musicFilename || undefined,
       );
 
-      console.log('[SessionOrchestrator] ✅ Video uploaded, jobId:', jobId);
-
-      // Step 2: Poll for processing completion
-      this.updateState({
-        ...this.sessionState,
-        status: 'processing_on_laptop',
-        downloadStatus: 'Processing video on laptop...',
-        laptopJobId: jobId,
-        laptopProgress: 0,
-      });
-
-      await laptopTransferService.pollUntilComplete(
-        jobId,
-        (status) => {
-          this.updateState({
-            ...this.sessionState,
-            downloadStatus: `Processing on laptop... ${status.progress}%`,
-            laptopProgress: status.progress,
-          });
-        },
-        3000, // Poll every 3 seconds
-        600000, // 10 minute timeout
-      );
-
-      console.log('[SessionOrchestrator] ✅ Processing complete');
-
-      // Step 3: Download processed video
-      this.updateState({
-        ...this.sessionState,
-        status: 'downloading_from_laptop',
-        downloadStatus: 'Downloading processed video...',
-        laptopProgress: 0,
-      });
-
-      const processedVideoPath = await laptopTransferService.downloadProcessedVideo(
-        jobId,
-        (progress) => {
-          this.updateState({
-            ...this.sessionState,
-            downloadStatus: `Downloading from laptop... ${progress}%`,
-            laptopProgress: progress,
-          });
-        },
-      );
-
-      console.log('[SessionOrchestrator] ✅ Processed video downloaded:', processedVideoPath);
-
-      // Step 4: Ready for delivery
-      this.updateState({
-        ...this.sessionState,
-        status: 'ready_for_delivery',
-        downloadStatus: 'Video ready for delivery!',
-        laptopProgress: 100,
-        processedVideoPath,
-      });
+      console.log('[SessionOrchestrator] Upload complete - phone is free for next session');
 
     } catch (error) {
-      console.error('[SessionOrchestrator] ❌ Laptop processing failed:', error);
-      this.updateState({
-        ...this.sessionState,
-        status: 'error',
-        error: `Laptop processing failed: ${error instanceof Error ? error.message : String(error)}`,
-      });
+      console.error('[SessionOrchestrator] Upload to laptop failed:', error);
+      // Non-fatal - just log and continue to idle
     }
   }
 
@@ -726,7 +613,6 @@ export class SessionOrchestrator implements ISessionOrchestrator {
 
     // Force stop all devices without waiting
     const stopPromises = [
-      audioService.stop().catch(e => console.error('Audio stop failed:', e)),
       goProService.stopRecording().catch(e => console.error('GoPro stop failed:', e)),
       boothService.stopRotation().catch(e => console.error('Booth stop failed:', e)),
     ];

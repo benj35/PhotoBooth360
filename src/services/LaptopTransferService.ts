@@ -1,10 +1,8 @@
 /**
- * LaptopTransferService - Handles video upload/download with laptop processing server
+ * LaptopTransferService - Handles video upload to laptop processing server
  *
- * Workflow:
- * 1. Upload raw video from phone to laptop server
- * 2. Poll status until processing completes
- * 3. Download processed video back to phone
+ * Fire-and-forget: uploads video then phone is free for next session.
+ * Laptop handles processing independently.
  */
 
 import axios, {AxiosProgressEvent} from 'axios';
@@ -12,7 +10,6 @@ import RNFS from 'react-native-fs';
 import {
   ILaptopTransferService,
   LaptopUploadResponse,
-  LaptopStatusResponse,
   LaptopHealthResponse,
 } from '../types';
 
@@ -60,7 +57,27 @@ class LaptopTransferService implements ILaptopTransferService {
   }
 
   /**
-   * Upload video to laptop for processing
+   * Fetch available music tracks from laptop server
+   */
+  async fetchMusicTracks(): Promise<{filename: string; name: string}[]> {
+    try {
+      const response = await axios.get<{tracks: {filename: string; name: string}[]}>(
+        `${this.baseUrl}/music`,
+        {timeout: 5000},
+      );
+      return response.data.tracks;
+    } catch (error) {
+      console.error('[LaptopTransfer] Failed to fetch music tracks:', error);
+      throw new Error(
+        `Failed to fetch music tracks: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Upload video to laptop for processing (fire-and-forget)
    */
   async uploadVideo(
     videoPath: string,
@@ -69,6 +86,7 @@ class LaptopTransferService implements ILaptopTransferService {
     customerPhone: string,
     template: string,
     onProgress?: (progress: number) => void,
+    musicFile?: string,
   ): Promise<string> {
     try {
       // Verify file exists
@@ -104,6 +122,9 @@ class LaptopTransferService implements ILaptopTransferService {
       formData.append('customerName', customerName);
       formData.append('customerPhone', customerPhone);
       formData.append('template', template);
+      if (musicFile) {
+        formData.append('musicFile', musicFile);
+      }
 
       console.log('[LaptopTransfer] Starting upload request...');
 
@@ -147,185 +168,6 @@ class LaptopTransferService implements ILaptopTransferService {
       }
       throw error;
     }
-  }
-
-  /**
-   * Check processing status
-   */
-  async checkStatus(jobId: string): Promise<LaptopStatusResponse> {
-    try {
-      const response = await axios.get<LaptopStatusResponse>(
-        `${this.baseUrl}/status/${jobId}`,
-        {
-          timeout: 10000,
-        },
-      );
-
-      console.log(
-        `[LaptopTransfer] Status for ${jobId}: ${response.data.status} (${response.data.progress}%)`,
-      );
-      return response.data;
-    } catch (error) {
-      console.error('[LaptopTransfer] Status check error:', error);
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
-        throw new Error(`Job ${jobId} not found on server`);
-      }
-      throw new Error(
-        `Failed to check status: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  /**
-   * Download processed video from laptop to phone
-   */
-  async downloadProcessedVideo(
-    jobId: string,
-    onProgress?: (progress: number) => void,
-  ): Promise<string> {
-    try {
-      // First check if job is completed
-      const status = await this.checkStatus(jobId);
-      if (status.status !== 'completed') {
-        throw new Error(
-          `Cannot download - job status is: ${status.status}`,
-        );
-      }
-
-      if (!status.outputFilename) {
-        throw new Error('No output filename in job status');
-      }
-
-      // Create download path
-      const downloadDir = `${RNFS.DocumentDirectoryPath}/processed_videos`;
-      await RNFS.mkdir(downloadDir);
-
-      const localPath = `${downloadDir}/${status.outputFilename}`;
-
-      console.log(
-        `[LaptopTransfer] Downloading processed video to ${localPath}`,
-      );
-
-      // Download file
-      const downloadResult = await RNFS.downloadFile({
-        fromUrl: `${this.baseUrl}/download/${jobId}`,
-        toFile: localPath,
-        begin: res => {
-          console.log(
-            `[LaptopTransfer] Download started, size: ${res.contentLength} bytes`,
-          );
-        },
-        progress: res => {
-          if (res.contentLength > 0) {
-            const percentComplete = Math.round(
-              (res.bytesWritten * 100) / res.contentLength,
-            );
-            onProgress?.(percentComplete);
-            console.log(
-              `[LaptopTransfer] Download progress: ${percentComplete}%`,
-            );
-          }
-        },
-      }).promise;
-
-      if (downloadResult.statusCode !== 200) {
-        throw new Error(
-          `Download failed with status code: ${downloadResult.statusCode}`,
-        );
-      }
-
-      console.log(`[LaptopTransfer] Download completed: ${localPath}`);
-      return localPath;
-    } catch (error) {
-      console.error('[LaptopTransfer] Download error:', error);
-      throw new Error(
-        `Download failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  /**
-   * Poll status until job completes or fails
-   */
-  async pollUntilComplete(
-    jobId: string,
-    onProgressUpdate?: (status: LaptopStatusResponse) => void,
-    pollInterval: number = 3000,
-    timeout: number = 600000, // 10 minutes default
-  ): Promise<LaptopStatusResponse> {
-    const startTime = Date.now();
-
-    while (true) {
-      // Check timeout
-      if (Date.now() - startTime > timeout) {
-        throw new Error(
-          `Polling timeout after ${timeout / 1000} seconds`,
-        );
-      }
-
-      // Get status
-      const status = await this.checkStatus(jobId);
-      onProgressUpdate?.(status);
-
-      // Check if done
-      if (status.status === 'completed') {
-        console.log(`[LaptopTransfer] Job ${jobId} completed successfully`);
-        return status;
-      }
-
-      if (status.status === 'failed') {
-        throw new Error(
-          `Processing failed: ${status.error || 'Unknown error'}`,
-        );
-      }
-
-      // Wait before next poll
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-    }
-  }
-
-  /**
-   * Complete workflow: upload + poll + download
-   */
-  async processVideo(
-    videoPath: string,
-    eventName: string,
-    customerName: string,
-    customerPhone: string,
-    template: string,
-    onUploadProgress?: (progress: number) => void,
-    onProcessingProgress?: (status: LaptopStatusResponse) => void,
-    onDownloadProgress?: (progress: number) => void,
-  ): Promise<string> {
-    console.log('[LaptopTransfer] Starting complete video processing workflow');
-
-    // 1. Upload
-    const jobId = await this.uploadVideo(
-      videoPath,
-      eventName,
-      customerName,
-      customerPhone,
-      template,
-      onUploadProgress,
-    );
-
-    // 2. Poll until complete
-    await this.pollUntilComplete(jobId, onProcessingProgress);
-
-    // 3. Download
-    const processedVideoPath = await this.downloadProcessedVideo(
-      jobId,
-      onDownloadProgress,
-    );
-
-    console.log(
-      `[LaptopTransfer] Complete workflow finished: ${processedVideoPath}`,
-    );
-    return processedVideoPath;
   }
 
   /**

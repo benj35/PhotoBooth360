@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -58,7 +60,12 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView
+      style={{flex: 1}}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.content}>
         {/* Duration Section */}
         <View style={styles.section}>
@@ -263,6 +270,7 @@ export default function SessionConfigScreen({ navigation }: SessionConfigScreenP
         </View>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

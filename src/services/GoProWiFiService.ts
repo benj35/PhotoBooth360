@@ -7,10 +7,13 @@ import RNFS from 'react-native-fs';
  * GoPro creates a WiFi hotspot that the phone connects to.
  * Videos are downloaded via HTTP REST API.
  *
- * GoPro WiFi API Documentation:
+ * GoPro Hero 13 uses Open GoPro HTTP API:
  * - Base URL: http://10.5.5.9:8080 (GoPro's default WiFi IP)
- * - Media List: GET /gp/gpMediaList
- * - Download: GET /videos/DCIM/100GOPRO/GOPR0001.MP4
+ * - Media List: GET /gopro/media/list
+ * - Download: GET /videos/DCIM/100GOPRO/GX010001.MP4
+ * - Turbo Transfer: GET /gopro/media/turbo_transfer?p=1
+ *
+ * Legacy /gp/gpControl endpoints do NOT work on Hero 13.
  */
 export class GoProWiFiService {
   private client: AxiosInstance;
@@ -28,28 +31,40 @@ export class GoProWiFiService {
 
   /**
    * Test connection to GoPro WiFi
+   * Uses Open GoPro API (Hero 13+). Retries up to 3 times since
+   * the network may need a moment to stabilize after WiFi switch.
    */
   async testConnection(): Promise<boolean> {
-    try {
-      console.log('[GoProWiFi] Testing connection to GoPro WiFi...');
-      const response = await this.client.get('/gp/gpControl/status', { timeout: 5000 });
-      this.isConnected = response.status === 200;
-      console.log('[GoProWiFi] Connection test:', this.isConnected ? 'SUCCESS' : 'FAILED');
-      return this.isConnected;
-    } catch (error) {
-      console.error('[GoProWiFi] Connection test failed:', error);
-      this.isConnected = false;
-      return false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[GoProWiFi] Testing connection (attempt ${attempt}/3)...`);
+        // Open GoPro uses /gopro/media/list - lightweight and confirms API is working
+        const response = await this.client.get('/gopro/media/list', { timeout: 5000 });
+        this.isConnected = response.status === 200;
+        console.log('[GoProWiFi] Connection test: SUCCESS');
+        return true;
+      } catch (error) {
+        console.error(`[GoProWiFi] Connection attempt ${attempt} failed:`, error);
+        if (attempt < 3) {
+          console.log('[GoProWiFi] Waiting 3s before retry...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
     }
+
+    console.error('[GoProWiFi] Connection test FAILED after 3 attempts');
+    this.isConnected = false;
+    return false;
   }
 
   /**
    * Get list of media files from GoPro
+   * Uses Open GoPro API: GET /gopro/media/list
    */
   async getMediaList(): Promise<any> {
     try {
       console.log('[GoProWiFi] Fetching media list...');
-      const response = await this.client.get('/gp/gpMediaList');
+      const response = await this.client.get('/gopro/media/list');
       console.log('[GoProWiFi] Media list retrieved');
       return response.data;
     } catch (error) {
@@ -59,22 +74,40 @@ export class GoProWiFiService {
   }
 
   /**
+   * Enable turbo transfer mode for faster downloads
+   */
+  async enableTurboTransfer(): Promise<void> {
+    try {
+      console.log('[GoProWiFi] Enabling turbo transfer...');
+      await this.client.get('/gopro/media/turbo_transfer?p=1', { timeout: 5000 });
+      console.log('[GoProWiFi] Turbo transfer enabled');
+    } catch (error) {
+      console.warn('[GoProWiFi] Failed to enable turbo transfer (non-fatal):', error);
+    }
+  }
+
+  /**
    * Download a specific video file from GoPro
-   * @param filename - GoPro filename (e.g., "GOPR0001.MP4")
+   * @param filename - GoPro filename (e.g., "GX010001.MP4")
    * @param destinationPath - Local path to save the file
    * @param onProgress - Progress callback (0-100)
+   * @param directory - GoPro directory (e.g., "100GOPRO") - defaults to "100GOPRO"
    */
   async downloadVideo(
     filename: string,
     destinationPath: string,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    directory: string = '100GOPRO'
   ): Promise<string> {
     try {
       console.log('[GoProWiFi] Downloading:', filename);
       console.log('[GoProWiFi] Destination:', destinationPath);
 
-      // GoPro file path pattern: /videos/DCIM/100GOPRO/GOPR0001.MP4
-      const goProPath = `/videos/DCIM/100GOPRO/${filename}`;
+      // Enable turbo transfer for faster download speeds
+      await this.enableTurboTransfer();
+
+      // GoPro file path pattern: /videos/DCIM/{directory}/{filename}
+      const goProPath = `/videos/DCIM/${directory}/${filename}`;
       const downloadUrl = `${this.baseUrl}${goProPath}`;
 
       // Use RNFS to download with progress tracking
@@ -107,12 +140,12 @@ export class GoProWiFiService {
    * Get the latest video file from GoPro
    * Useful for downloading the most recent recording
    */
-  async getLatestVideo(): Promise<{ filename: string; size: number } | null> {
+  async getLatestVideo(): Promise<{ filename: string; size: number; directory: string } | null> {
     try {
       const mediaList = await this.getMediaList();
 
-      // Parse GoPro media list response
-      // Structure: { media: [{ d: "100GOPRO", fs: [{ n: "GOPR0001.MP4", s: "123456" }] }] }
+      // Parse GoPro media list response (Open GoPro format)
+      // Structure: { media: [{ d: "100GOPRO", fs: [{ n: "GX010001.MP4", s: "123456" }] }] }
       if (!mediaList?.media || mediaList.media.length === 0) {
         console.log('[GoProWiFi] No media found on GoPro');
         return null;
@@ -129,9 +162,12 @@ export class GoProWiFiService {
 
       const lastFile = lastDir.fs[lastDir.fs.length - 1];
 
+      console.log(`[GoProWiFi] Latest video: ${lastDir.d}/${lastFile.n} (${lastFile.s} bytes)`);
+
       return {
         filename: lastFile.n,
         size: parseInt(lastFile.s),
+        directory: lastDir.d,
       };
     } catch (error) {
       console.error('[GoProWiFi] Failed to get latest video:', error);

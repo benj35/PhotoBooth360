@@ -10,6 +10,8 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
+  KeyboardAvoidingView,
+  ScrollView,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -33,7 +35,7 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
   // GoPro WiFi credentials
   // Note: SSID is "HERO13 Black" (not the serial number "GP50113778")
   const [goProSSID, setGoProSSID] = useState('HERO13 Black');
-  const [goProPassword, setGoProPassword] = useState('R2Q-P>T-fpy');
+  const [goProPassword, setGoProPassword] = useState('tPK-Mr7-QkV');
 
   // Laptop server configuration
   const [laptopUrl, setLaptopUrl] = useState(laptopTransferService.getBaseUrl());
@@ -245,7 +247,7 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
             onPress: () => {
               setSkipGoPro(true);
               // Navigate to Customer Input first
-              navigation.navigate('CustomerInput');
+              navigation.reset({ index: 0, routes: [{ name: 'CustomerInput' }] });
             },
           },
         ]
@@ -254,11 +256,20 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
     }
 
     // Navigate to Customer Input to set up the first session
-    navigation.navigate('CustomerInput');
+    navigation.reset({ index: 0, routes: [{ name: 'CustomerInput' }] });
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={{flex: 1}}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{paddingBottom: 40}}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>Connect Your Devices</Text>
       <Text style={styles.subtitle}>
         Connect both the GoPro camera and 360° booth to continue
@@ -422,6 +433,11 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
         onRequestClose={() => setShowWiFiModal(false)}
       >
         <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{width: '100%', alignItems: 'center'}}
+          >
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{flexGrow: 1, justifyContent: 'center'}}>
           <View style={styles.wifiModalContent}>
             <Text style={styles.modalTitle}>WiFi Configuration</Text>
             <Text style={styles.modalSubtitle}>
@@ -469,7 +485,7 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
             />
 
             <Text style={styles.modalHint}>
-              💡 These credentials enable automatic WiFi switching for video downloads
+              These credentials enable automatic WiFi switching for video downloads
             </Text>
 
             <View style={styles.modalActions}>
@@ -488,9 +504,12 @@ export default function ConnectionScreen({ navigation }: ConnectionScreenProps) 
               </TouchableOpacity>
             </View>
           </View>
+          </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
-    </View>
+    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

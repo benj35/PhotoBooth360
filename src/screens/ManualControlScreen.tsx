@@ -8,6 +8,8 @@ import {
   Alert,
   ScrollView,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -15,8 +17,6 @@ import { RootStackParamList } from '../../App';
 import { useDeviceStore } from '@stores/deviceStore';
 import goProService from '@services/GoProService';
 import boothService from '@services/BoothService';
-import audioService from '@services/AudioService';
-import { useMusicStore } from '@stores/musicStore';
 
 type ManualControlScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ManualControl'>;
@@ -24,11 +24,9 @@ type ManualControlScreenProps = {
 
 export default function ManualControlScreen({ navigation }: ManualControlScreenProps) {
   const { devices, refreshStatus } = useDeviceStore();
-  const { selectedTrack } = useMusicStore();
 
   const [goProRecording, setGoProRecording] = useState(false);
   const [boothRotating, setBoothRotating] = useState(false);
-  const [audioPlaying, setAudioPlaying] = useState(false);
   const [rotationSpeed, setRotationSpeed] = useState(50);
 
   // LED Control State
@@ -73,26 +71,6 @@ export default function ManualControlScreen({ navigation }: ManualControlScreenP
       } else {
         await boothService.startRotation(rotationSpeed);
         setBoothRotating(true);
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    }
-  };
-
-  const handleAudioToggle = async () => {
-    try {
-      if (!selectedTrack) {
-        Alert.alert('No Music', 'Please select a track first');
-        navigation.navigate('MusicSelection');
-        return;
-      }
-
-      if (audioPlaying) {
-        await audioService.stop();
-        setAudioPlaying(false);
-      } else {
-        await audioService.play();
-        setAudioPlaying(true);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -180,7 +158,12 @@ export default function ManualControlScreen({ navigation }: ManualControlScreenP
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <KeyboardAvoidingView
+      style={{flex: 1}}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.content}>
         <Text style={styles.title}>Manual Device Control</Text>
         <Text style={styles.subtitle}>
@@ -524,46 +507,6 @@ export default function ManualControlScreen({ navigation }: ManualControlScreenP
           )}
         </View>
 
-        {/* Audio Controls */}
-        <View style={styles.controlCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Audio Playback</Text>
-          </View>
-
-          {selectedTrack ? (
-            <>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Track:</Text>
-                <Text style={styles.infoValue}>{selectedTrack.title}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Artist:</Text>
-                <Text style={styles.infoValue}>{selectedTrack.artist}</Text>
-              </View>
-
-              <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Playing</Text>
-                <Switch
-                  value={audioPlaying}
-                  onValueChange={handleAudioToggle}
-                  trackColor={{ false: '#333', true: '#4caf50' }}
-                  thumbColor={audioPlaying ? '#fff' : '#999'}
-                />
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.notConnectedText}>No track selected</Text>
-              <TouchableOpacity
-                style={styles.selectMusicButton}
-                onPress={() => navigation.navigate('MusicSelection')}
-              >
-                <Text style={styles.selectMusicText}>Select Music</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
         {/* Warning */}
         <View style={styles.warningCard}>
           <Text style={styles.warningTitle}>⚠️ Manual Mode</Text>
@@ -574,6 +517,7 @@ export default function ManualControlScreen({ navigation }: ManualControlScreenP
         </View>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -733,18 +677,6 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     paddingVertical: 20,
-  },
-  selectMusicButton: {
-    backgroundColor: '#2196f3',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  selectMusicText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
   },
   warningCard: {
     backgroundColor: '#3a2a1e',

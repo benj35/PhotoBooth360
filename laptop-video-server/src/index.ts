@@ -20,6 +20,7 @@ import uploadRouter from './routes/upload';
 import statusRouter from './routes/status';
 import downloadRouter from './routes/download';
 import healthRouter from './routes/health';
+import musicRouter from './routes/music';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +57,7 @@ app.use('/status', statusRouter);
 app.use('/download', downloadRouter);
 app.use('/health', healthRouter);
 app.use('/templates', healthRouter); // Reuse health router for /templates
+app.use('/music', musicRouter);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -65,6 +67,7 @@ app.get('/', (req, res) => {
     endpoints: {
       health: 'GET /health',
       templates: 'GET /health/templates',
+      music: 'GET /music',
       upload: 'POST /upload',
       status: 'GET /status/:jobId',
       download: 'GET /download/:jobId',
@@ -93,6 +96,7 @@ app.listen(PORT, () => {
   console.log('║  Endpoints:                                                ║');
   console.log('║    GET  /health          - Check server status             ║');
   console.log('║    GET  /health/templates - List available templates       ║');
+  console.log('║    GET  /music           - List available music tracks     ║');
   console.log('║    POST /upload          - Upload video for processing     ║');
   console.log('║    GET  /status/:jobId   - Check processing status         ║');
   console.log('║    GET  /download/:jobId - Download processed video        ║');
